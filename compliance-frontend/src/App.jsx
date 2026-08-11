@@ -7,7 +7,8 @@ import {
   Edit3, ToggleLeft, ToggleRight, Info, ArrowUpRight, Home,
   Mail, KeyRound, Calendar, SlidersHorizontal, ChevronUp, RefreshCw,
   BookOpen, Scale, Hash, ExternalLink, Users, UserPlus, Building, Crown,
-  ThumbsUp, ThumbsDown, Star, MessageSquare, Send, Check
+  ThumbsUp, ThumbsDown, Star, MessageSquare, Send, Check,
+  Briefcase, Archive, History, ShieldCheck
 } from "lucide-react";
 
 // ── API Configuration ──
@@ -110,11 +111,65 @@ class ApiClient {
   }
 
   // Documents
-  async uploadDocument(file) {
+  async uploadDocument(file, clientId = null) {
     const form = new FormData();
     form.append("file", file);
     if (this.scopeOrgId) form.append("organization_id", this.scopeOrgId);
+    if (clientId) form.append("client_id", clientId);
     return this.request("/documents/upload", { method: "POST", body: form });
+  }
+
+  // Clientes do escritório
+  async listClients() {
+    const qs = this.scopeOrgId ? `?organization_id=${this.scopeOrgId}` : "";
+    return this.request(`/clients${qs}`);
+  }
+
+  async createClient(data) {
+    const body = this.scopeOrgId ? { ...data, organization_id: this.scopeOrgId } : data;
+    return this.request("/clients", { method: "POST", body: JSON.stringify(body) });
+  }
+
+  async updateClient(id, data) {
+    return this.request(`/clients/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
+  async deleteClient(id) {
+    return this.request(`/clients/${id}`, { method: "DELETE" });
+  }
+
+  async listAssignees(clientId) {
+    return this.request(`/clients/${clientId}/assignees`);
+  }
+
+  async assignUser(clientId, email) {
+    return this.request(`/clients/${clientId}/assignees`, {
+      method: "POST", body: JSON.stringify({ email }),
+    });
+  }
+
+  async unassignUser(clientId, userId) {
+    return this.request(`/clients/${clientId}/assignees/${userId}`, { method: "DELETE" });
+  }
+
+  async listExpired() {
+    const qs = this.scopeOrgId ? `?organization_id=${this.scopeOrgId}` : "";
+    return this.request(`/clients/retencao/vencidos${qs}`);
+  }
+
+  async purgeDocuments(documentIds) {
+    const qs = this.scopeOrgId ? `?organization_id=${this.scopeOrgId}` : "";
+    return this.request(`/clients/retencao/expurgar${qs}`, {
+      method: "POST", body: JSON.stringify({ document_ids: documentIds }),
+    });
+  }
+
+  async listAccessLogs(clientId = null) {
+    const p = new URLSearchParams();
+    if (this.scopeOrgId) p.set("organization_id", this.scopeOrgId);
+    if (clientId) p.set("client_id", clientId);
+    const qs = p.toString();
+    return this.request(`/clients/auditoria/acessos${qs ? `?${qs}` : ""}`);
   }
 
   async listDocuments(params = {}) {
@@ -123,6 +178,7 @@ class ApiClient {
     if (params.search) qs.set("search", params.search);
     if (params.offset != null) qs.set("offset", params.offset);
     if (params.limit) qs.set("limit", params.limit);
+    if (params.clientId) qs.set("client_id", params.clientId);
     if (this.scopeOrgId) qs.set("organization_id", this.scopeOrgId);
     const q = qs.toString();
     return this.request(`/documents${q ? `?${q}` : ""}`);
@@ -491,7 +547,7 @@ const LoginPage = ({ onLogin }) => {
 
 // ── Sidebar ──
 const Sidebar = ({ currentPage, onNavigate, collapsed, onToggle, user, onLogout, isMobile, mobileOpen, onMobileClose }) => {
-  const navItems = [{ id: "dashboard", icon: Home, label: "Dashboard" }, { id: "upload", icon: Upload, label: "Nova Análise" }, { id: "history", icon: Clock, label: "Histórico" }, { id: "legislation", icon: BookOpen, label: "Base Legal" }, { id: "rules", icon: Settings, label: "Regras" }, { id: "team", icon: Users, label: "Equipe" }];
+  const navItems = [{ id: "dashboard", icon: Home, label: "Dashboard" }, { id: "upload", icon: Upload, label: "Nova Análise" }, { id: "history", icon: Clock, label: "Histórico" }, { id: "legislation", icon: BookOpen, label: "Base Legal" }, { id: "rules", icon: Settings, label: "Regras" }, { id: "clients", icon: Briefcase, label: "Clientes" }, { id: "team", icon: Users, label: "Equipe" }];
   const w = collapsed && !isMobile ? 72 : 260;
   const show = isMobile || !collapsed;
   const handleNav = (id) => { onNavigate(id); if (isMobile) onMobileClose(); };
@@ -771,6 +827,14 @@ const UploadPage = ({ onAnalyzeComplete, showToast }) => {
   const [stage, setStage] = useState("");
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
+  const [clients, setClients] = useState([]);
+  const [clientId, setClientId] = useState("");
+
+  // Amarrar o contrato ao cliente na entrada é o que define quem poderá lê-lo
+  // depois. Escolher aqui evita ter que reclassificar o acervo mais tarde.
+  useEffect(() => {
+    api.listClients().then(setClients).catch(() => setClients([]));
+  }, []);
 
   const handleFile = (f) => {
     if (f && (f.type === "application/pdf" || f.name.endsWith('.pdf') || f.name.endsWith('.docx'))) setFile(f);
@@ -790,7 +854,7 @@ const UploadPage = ({ onAnalyzeComplete, showToast }) => {
     setProgress(10);
     setStage("Enviando documento...");
     try {
-      const result = await api.uploadDocument(file);
+      const result = await api.uploadDocument(file, clientId || null);
       const docId = result.document_id;
       const taskId = result.task_id;
       setProgress(20);
@@ -839,6 +903,20 @@ const UploadPage = ({ onAnalyzeComplete, showToast }) => {
             <input ref={fileInputRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
             {file ? (<><div style={{ width: 52, height: 52, borderRadius: 13, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><CheckCircle size={26} color="#16a34a" /></div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{file.name}</div><div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>{formatFileSize(file.size)}</div><button onClick={e => { e.stopPropagation(); setFile(null); }} style={{ marginTop: 8, background: "none", border: "none", color: "#6366f1", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Trocar arquivo</button></>) : (<><div style={{ width: 56, height: 56, borderRadius: 16, background: dragOver ? "#c7d2fe" : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", transition: "all 0.3s" }}><FileUp size={26} color={dragOver ? "#6366f1" : "#94a3b8"} /></div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: F }}>Arraste e solte seu documento</div><div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>ou clique para selecionar • PDF ou DOCX • até 10MB</div></>)}
           </div>
+          {file && clients.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 5, fontFamily: F }}>Cliente</label>
+              <select value={clientId} onChange={e => setClientId(e.target.value)} style={{ width: "100%", padding: "11px 12px", borderRadius: 11, border: "1px solid #d1d5db", fontSize: 13, fontFamily: F, outline: "none", background: "white", boxSizing: "border-box" }}>
+                <option value="">Sem cliente</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 5, fontFamily: F, lineHeight: 1.5 }}>
+                {clientId
+                  ? "Só quem estiver designado a este cliente poderá abrir o documento."
+                  : "Sem cliente, o documento fica visível a toda a equipe."}
+              </div>
+            </div>
+          )}
           {file && <button onClick={startAnalysis} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 18, padding: "13px", borderRadius: 11, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontSize: 14, fontWeight: 700, fontFamily: F, boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}><Zap size={17} /> Iniciar Análise com IA</button>}
           <div className="upload-features" style={{ display: "grid", gap: 10, marginTop: 32 }}>
             {[{ icon: Lock, title: "Criptografia AES-256", desc: "Documentos protegidos" }, { icon: Zap, title: "Análise com Claude AI", desc: "Resultado em minutos" }, { icon: Shield, title: "Multi-legislação", desc: "LGPD, CDC, CC, CLT e mais" }].map((item, i) => (
@@ -1428,6 +1506,12 @@ const HistoryPage = ({ onViewReport, showToast }) => {
   const [search, setSearch] = useState("");
   const [showF, setShowF] = useState(false);
   const [delC, setDelC] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [clientFilter, setClientFilter] = useState("");
+
+  useEffect(() => {
+    api.listClients().then(c => setClients(c || [])).catch(() => setClients([]));
+  }, []);
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -1435,6 +1519,7 @@ const HistoryPage = ({ onViewReport, showToast }) => {
       const params = { limit: 100 };
       if (sf !== "all") params.status = sf;
       if (search) params.search = search;
+      if (clientFilter) params.clientId = clientFilter;
       const data = await api.listDocuments(params);
       setDocuments(data.documents || []);
     } catch (err) {
@@ -1442,7 +1527,7 @@ const HistoryPage = ({ onViewReport, showToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [sf, search, showToast]);
+  }, [sf, search, clientFilter, showToast]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
@@ -1470,6 +1555,15 @@ const HistoryPage = ({ onViewReport, showToast }) => {
       {showF && (
         <div style={{ display: "flex", gap: 14, marginBottom: 16, padding: "14px 18px", background: "white", borderRadius: 11, border: "1px solid #e2e8f0", flexWrap: "wrap", animation: "fadeSlideUp 0.2s ease" }}>
           <div><div style={{ fontSize: 10, fontWeight: 600, color: "#64748b", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Status</div><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{[{ k: "all", l: "Todos" },{ k: "analyzed", l: "Analisados" },{ k: "processing", l: "Processando" },{ k: "error", l: "Erro" }].map(f => <button key={f.k} onClick={() => setSf(f.k)} style={{ padding: "4px 10px", borderRadius: 14, border: "1px solid", borderColor: sf === f.k ? "#6366f1" : "#e2e8f0", background: sf === f.k ? "#eef2ff" : "white", color: sf === f.k ? "#6366f1" : "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F }}>{f.l}</button>)}</div></div>
+          {clients.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#64748b", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Cliente</div>
+              <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} style={{ padding: "5px 10px", borderRadius: 14, border: "1px solid", borderColor: clientFilter ? "#6366f1" : "#e2e8f0", background: clientFilter ? "#eef2ff" : "white", color: clientFilter ? "#6366f1" : "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F, outline: "none" }}>
+                <option value="">Todos os clientes</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
       )}
       <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
@@ -1785,6 +1879,393 @@ const RulesIntro = ({ globalCount, ownCount, isTeam, onDismiss }) => (
     </div>
   </div>
 );
+
+// ── Camada de escritório: carteira de clientes, retenção e auditoria ──
+// Um escritório não organiza o trabalho por arquivo, e sim por cliente: é ele
+// que define quem pode ler o material, por quanto tempo fica guardado e o que a
+// auditoria precisa reconstruir depois.
+
+const ACTION_META = {
+  view: { label: "Leu o relatório", color: "#0891b2", bg: "#ecfeff" },
+  download: { label: "Baixou o original", color: "#7c3aed", bg: "#f5f3ff" },
+  export: { label: "Exportou", color: "#2563eb", bg: "#eff6ff" },
+  analyze: { label: "Enviou para análise", color: "#059669", bg: "#ecfdf5" },
+  delete: { label: "Excluiu", color: "#dc2626", bg: "#fef2f2" },
+  assign: { label: "Designou", color: "#ea580c", bg: "#fff7ed" },
+  unassign: { label: "Retirou designação", color: "#b45309", bg: "#fffbeb" },
+  denied: { label: "Acesso negado", color: "#991b1b", bg: "#fef2f2" },
+};
+
+const RETENTION_OPTIONS = [
+  { value: "", label: "Sem prazo definido" },
+  { value: 12, label: "1 ano" },
+  { value: 24, label: "2 anos" },
+  { value: 60, label: "5 anos" },
+  { value: 120, label: "10 anos" },
+  { value: 240, label: "20 anos" },
+];
+
+const ClientsPage = ({ showToast, scopeOrgId, canManage = true }) => {
+  const [aba, setAba] = useState("carteira");
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [fd, setFd] = useState({ name: "", document: "", notes: "", retention_months: "" });
+  const [saving, setSaving] = useState(false);
+  const [delC, setDelC] = useState(null);
+  const [detalhe, setDetalhe] = useState(null);      // cliente aberto no painel de designações
+  const [designados, setDesignados] = useState([]);
+  const [novoEmail, setNovoEmail] = useState("");
+  const [vencidos, setVencidos] = useState([]);
+  const [marcados, setMarcados] = useState({});
+  const [confirmaExpurgo, setConfirmaExpurgo] = useState(false);
+  const [logs, setLogs] = useState([]);
+
+  const fetchClients = useCallback(async () => {
+    setLoading(true);
+    try {
+      setClients(await api.listClients() || []);
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally { setLoading(false); }
+  }, [showToast]);
+
+  useEffect(() => { fetchClients(); }, [fetchClients]);
+
+  useEffect(() => {
+    if (aba === "retencao") api.listExpired().then(v => setVencidos(v || [])).catch(() => setVencidos([]));
+    if (aba === "auditoria") api.listAccessLogs().then(l => setLogs(l || [])).catch(() => setLogs([]));
+  }, [aba, scopeOrgId]);
+
+  const openNew = () => { setFd({ name: "", document: "", notes: "", retention_months: "" }); setEditId(null); setShowForm(true); };
+  const openEdit = (c) => {
+    setFd({ name: c.name, document: c.document || "", notes: c.notes || "", retention_months: c.retention_months || "" });
+    setEditId(c.id);
+    setShowForm(true);
+  };
+
+  const save = async () => {
+    if (!fd.name.trim()) { showToast("O nome do cliente é obrigatório", "error"); return; }
+    setSaving(true);
+    const payload = {
+      name: fd.name.trim(),
+      document: fd.document || null,
+      notes: fd.notes || null,
+      retention_months: fd.retention_months ? Number(fd.retention_months) : null,
+    };
+    try {
+      if (editId) {
+        await api.updateClient(editId, payload);
+        showToast("Cliente atualizado", "success");
+      } else {
+        await api.createClient(payload);
+        showToast("Cliente criado", "success");
+      }
+      setShowForm(false);
+      setEditId(null);
+      fetchClients();
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally { setSaving(false); }
+  };
+
+  const remover = async (id) => {
+    try {
+      await api.deleteClient(id);
+      setDelC(null);
+      showToast("Cliente excluído. Os documentos foram mantidos.", "success");
+      fetchClients();
+    } catch (err) { showToast(err.message, "error"); }
+  };
+
+  const abrirDesignacoes = async (c) => {
+    setDetalhe(c);
+    setNovoEmail("");
+    try {
+      setDesignados(await api.listAssignees(c.id) || []);
+    } catch (err) { showToast(err.message, "error"); }
+  };
+
+  const designar = async () => {
+    if (!novoEmail.trim()) return;
+    try {
+      const criado = await api.assignUser(detalhe.id, novoEmail.trim());
+      setDesignados([...designados, criado]);
+      setNovoEmail("");
+      showToast("Acesso concedido", "success");
+      fetchClients();
+    } catch (err) { showToast(err.message, "error"); }
+  };
+
+  const retirar = async (userId) => {
+    try {
+      await api.unassignUser(detalhe.id, userId);
+      setDesignados(designados.filter(d => d.user_id !== userId));
+      showToast("Acesso retirado", "success");
+      fetchClients();
+    } catch (err) { showToast(err.message, "error"); }
+  };
+
+  const expurgar = async () => {
+    const ids = Object.keys(marcados).filter(k => marcados[k]);
+    try {
+      const r = await api.purgeDocuments(ids);
+      setConfirmaExpurgo(false);
+      setMarcados({});
+      showToast(`${r.deleted} ${r.deleted === 1 ? "documento excluído" : "documentos excluídos"}`, "success");
+      setVencidos(await api.listExpired() || []);
+      fetchClients();
+    } catch (err) { showToast(err.message, "error"); }
+  };
+
+  const marcadosCount = Object.values(marcados).filter(Boolean).length;
+  const totalVencidos = clients.reduce((n, c) => n + (c.expired_count || 0), 0);
+
+  const abas = [
+    { id: "carteira", icon: Briefcase, label: "Carteira", badge: clients.length },
+    { id: "retencao", icon: Archive, label: "Retenção", badge: totalVencidos || null },
+    { id: "auditoria", icon: History, label: "Auditoria", badge: null },
+  ];
+
+  if (loading) return <div style={{ padding: 60, textAlign: "center" }}><Loader2 size={26} style={{ animation: "spin 1s linear infinite" }} color="#6366f1" /></div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0, fontFamily: F, letterSpacing: "-0.5px" }}>Clientes</h1>
+          <p style={{ fontSize: 12, color: "#64748b", margin: "4px 0 0", fontFamily: F }}>
+            {scopeOrgId
+              ? "Quem é designado a um cliente enxerga os contratos dele. Os demais não."
+              : "Sua carteira pessoal. Serve para organizar o acervo e definir o prazo de guarda."}
+          </p>
+        </div>
+        {canManage && aba === "carteira" && (
+          <button onClick={() => showForm ? setShowForm(false) : openNew()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 12, background: showForm ? "#f1f5f9" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: showForm ? "#64748b" : "white", fontFamily: F }}>
+            {showForm ? <><X size={15} /> Cancelar</> : <><Plus size={15} /> Novo Cliente</>}
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #e2e8f0", marginBottom: 18 }}>
+        {abas.map(a => {
+          const ativa = aba === a.id;
+          return (
+            <button key={a.id} onClick={() => setAba(a.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", background: "none", border: "none", borderBottom: `2px solid ${ativa ? "#6366f1" : "transparent"}`, marginBottom: -1, cursor: "pointer", fontSize: 12.5, fontWeight: ativa ? 700 : 600, color: ativa ? "#6366f1" : "#94a3b8", fontFamily: F }}>
+              <a.icon size={14} /> {a.label}
+              {a.badge != null && a.badge > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 700, background: a.id === "retencao" ? "#fef2f2" : "#f1f5f9", color: a.id === "retencao" ? "#dc2626" : "#64748b", padding: "1px 7px", borderRadius: 20 }}>{a.badge}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {aba === "carteira" && (
+        <>
+          {showForm && (
+            <div style={{ background: "white", borderRadius: 13, border: "1px solid #e2e8f0", padding: 22, marginBottom: 18, animation: "fadeSlideUp 0.3s ease" }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", margin: "0 0 16px", fontFamily: F }}>{editId ? "Editar cliente" : "Novo cliente"}</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Nome *</label>
+                  <input value={fd.name} onChange={e => setFd({ ...fd, name: e.target.value })} placeholder="Ex: Construtora Aurora" style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>CNPJ ou CPF</label>
+                  <input value={fd.document} onChange={e => setFd({ ...fd, document: e.target.value })} placeholder="Opcional" style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Prazo de guarda</label>
+                <select value={fd.retention_months} onChange={e => setFd({ ...fd, retention_months: e.target.value })} style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", background: "white", boxSizing: "border-box" }}>
+                  {RETENTION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 5, fontFamily: F }}>Vencido o prazo, o documento entra na fila de retenção. Nada é apagado sem alguém confirmar.</div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Observações</label>
+                <textarea value={fd.notes} onChange={e => setFd({ ...fd, notes: e.target.value })} rows={2} style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+              </div>
+              <button onClick={save} disabled={saving} style={{ padding: "9px 20px", borderRadius: 9, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontWeight: 600, fontSize: 12, fontFamily: F, opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+                {saving && <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />}
+                {editId ? "Salvar alterações" : "Criar cliente"}
+              </button>
+            </div>
+          )}
+
+          {clients.length === 0 && !showForm ? (
+            <div style={{ background: "white", borderRadius: 13, border: "1px dashed #cbd5e1", padding: "40px 28px", textAlign: "center" }}>
+              <div style={{ width: 48, height: 48, borderRadius: 13, background: "#eef2ff", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><Briefcase size={22} color="#6366f1" /></div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", fontFamily: F }}>Nenhum cliente cadastrado</div>
+              <p style={{ fontSize: 12, color: "#64748b", margin: "6px auto 0", maxWidth: 420, fontFamily: F, lineHeight: 1.6 }}>
+                Enquanto não houver clientes, tudo funciona como antes: os contratos ficam visíveis a toda a equipe. Cadastrar um cliente é o que permite restringir quem lê o quê e definir prazo de guarda.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {clients.map((c, i) => (
+                <div key={c.id} style={{ background: "white", borderRadius: 11, border: "1px solid #e2e8f0", padding: "16px 18px", animation: `fadeSlideUp 0.4s ease ${i * 0.04}s both` }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{c.name}</span>
+                        {c.document && <span style={{ fontSize: 10.5, color: "#94a3b8", fontFamily: F }}>{c.document}</span>}
+                        {c.expired_count > 0 && (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", background: "#fef2f2", padding: "2px 8px", borderRadius: 20, fontFamily: F }}>{c.expired_count} vencido{c.expired_count > 1 ? "s" : ""}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#64748b", marginTop: 3, fontFamily: F }}>
+                        {c.document_count} {c.document_count === 1 ? "documento" : "documentos"}
+                        {scopeOrgId && ` · ${c.assignee_count} com acesso`}
+                        {c.retention_months ? ` · guarda de ${c.retention_months >= 12 ? `${Math.round(c.retention_months / 12)} ano${c.retention_months >= 24 ? "s" : ""}` : `${c.retention_months} meses`}` : " · sem prazo de guarda"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      {scopeOrgId && canManage && (
+                        <button onClick={() => abrirDesignacoes(c)} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 11, fontWeight: 600, color: "#6366f1", fontFamily: F }} title="Quem tem acesso a este cliente"><ShieldCheck size={12} /> Acesso</button>
+                      )}
+                      {canManage && <>
+                        <button onClick={() => openEdit(c)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Editar"><Edit3 size={12} color="#6366f1" /></button>
+                        <button onClick={() => setDelC(c.id)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Excluir"><Trash2 size={12} color="#ef4444" /></button>
+                      </>}
+                    </div>
+                  </div>
+                  {c.notes && <div style={{ marginTop: 8, padding: "7px 10px", background: "#f8fafc", borderRadius: 5, fontSize: 11, color: "#475569", fontFamily: F }}>{c.notes}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {aba === "retencao" && (
+        <>
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 16px", marginBottom: 14, display: "flex", gap: 10 }}>
+            <Info size={15} color="#6366f1" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 11.5, color: "#475569", fontFamily: F, lineHeight: 1.6 }}>
+              Aqui ficam os documentos que passaram do prazo de guarda do cliente. Nada é apagado sozinho: um contrato pode estar vencido para a política de guarda e ainda ser prova em processo em curso.
+            </div>
+          </div>
+
+          {vencidos.length === 0 ? (
+            <div style={{ background: "white", borderRadius: 13, border: "1px dashed #cbd5e1", padding: "36px 28px", textAlign: "center" }}>
+              <CheckCircle size={22} color="#16a34a" style={{ marginBottom: 10 }} />
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#0f172a", fontFamily: F }}>Nenhum documento vencido</div>
+              <p style={{ fontSize: 11.5, color: "#64748b", margin: "5px 0 0", fontFamily: F }}>Só entram nesta fila os clientes com prazo de guarda definido.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {vencidos.map(v => (
+                  <label key={v.document_id} style={{ display: "flex", alignItems: "center", gap: 11, background: "white", borderRadius: 10, border: `1px solid ${marcados[v.document_id] ? "#fca5a5" : "#e2e8f0"}`, padding: "13px 16px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!marcados[v.document_id]} onChange={e => setMarcados({ ...marcados, [v.document_id]: e.target.checked })} style={{ width: 15, height: 15, accentColor: "#ef4444", cursor: "pointer" }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#0f172a", fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.filename}</div>
+                      <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 2, fontFamily: F }}>{v.client_name} · enviado em {formatDate(v.uploaded_at)}</div>
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: "#dc2626", background: "#fef2f2", padding: "3px 9px", borderRadius: 20, fontFamily: F, flexShrink: 0 }}>venceu há {v.days_overdue} {v.days_overdue === 1 ? "dia" : "dias"}</span>
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, gap: 10 }}>
+                <button onClick={() => setMarcados(marcadosCount === vencidos.length ? {} : Object.fromEntries(vencidos.map(v => [v.document_id, true])))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600, color: "#6366f1", fontFamily: F }}>
+                  {marcadosCount === vencidos.length ? "Desmarcar todos" : "Marcar todos"}
+                </button>
+                <button onClick={() => setConfirmaExpurgo(true)} disabled={!marcadosCount} style={{ padding: "9px 18px", borderRadius: 9, border: "none", cursor: marcadosCount ? "pointer" : "default", background: marcadosCount ? "#ef4444" : "#f1f5f9", color: marcadosCount ? "white" : "#94a3b8", fontWeight: 600, fontSize: 12, fontFamily: F, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Trash2 size={13} /> Excluir {marcadosCount || ""} {marcadosCount === 1 ? "documento" : "documentos"}
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {aba === "auditoria" && (
+        <>
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 16px", marginBottom: 14, display: "flex", gap: 10 }}>
+            <Info size={15} color="#6366f1" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 11.5, color: "#475569", fontFamily: F, lineHeight: 1.6 }}>
+              {scopeOrgId
+                ? "Quem leu, baixou ou excluiu o quê. O registro fica mesmo depois que o documento é apagado, que é o caso em que a auditoria mais precisa dele."
+                : "Seu próprio histórico de acessos. Fica registrado mesmo depois que o documento é apagado."}
+            </div>
+          </div>
+
+          {logs.length === 0 ? (
+            <div style={{ background: "white", borderRadius: 13, border: "1px dashed #cbd5e1", padding: "36px 28px", textAlign: "center" }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#0f172a", fontFamily: F }}>Nenhum acesso registrado ainda</div>
+            </div>
+          ) : (
+            <div style={{ background: "white", borderRadius: 13, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+              {logs.map((l, i) => {
+                const meta = ACTION_META[l.action] || { label: l.action, color: "#64748b", bg: "#f8fafc" };
+                return (
+                  <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 16px", borderTop: i ? "1px solid #f1f5f9" : "none" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: meta.color, background: meta.bg, padding: "3px 9px", borderRadius: 20, fontFamily: F, flexShrink: 0, minWidth: 118, textAlign: "center" }}>{meta.label}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: "#0f172a", fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.detail || "(sem descrição)"}</div>
+                      <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 2, fontFamily: F }}>
+                        {l.user_email || "usuário removido"}{l.client_name ? ` · ${l.client_name}` : ""}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 10.5, color: "#94a3b8", fontFamily: F, flexShrink: 0 }}>{formatDate(l.created_at)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      <Modal open={!!detalhe} onClose={() => setDetalhe(null)} title={detalhe ? `Acesso a ${detalhe.name}` : ""} width={460}>
+        <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 14px", fontFamily: F, lineHeight: 1.6 }}>
+          Só quem estiver nesta lista enxerga os contratos deste cliente. Responsáveis pela equipe enxergam sempre.
+        </p>
+        <div style={{ display: "flex", gap: 7, marginBottom: 14 }}>
+          <input value={novoEmail} onChange={e => setNovoEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && designar()} placeholder="email do advogado" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none" }} />
+          <button onClick={designar} style={{ padding: "9px 15px", borderRadius: 9, border: "none", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: F, display: "flex", alignItems: "center", gap: 5 }}><UserPlus size={13} /> Dar acesso</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {designados.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8", fontFamily: F, textAlign: "center", padding: 14 }}>Ninguém designado ainda.</div>}
+          {designados.map(d => (
+            <div key={d.user_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", background: "#f8fafc", borderRadius: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", fontFamily: F }}>{d.full_name || d.email}</div>
+                {d.full_name && <div style={{ fontSize: 10.5, color: "#94a3b8", fontFamily: F }}>{d.email}</div>}
+              </div>
+              <button onClick={() => retirar(d.user_id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 3 }} title="Retirar acesso"><X size={14} color="#ef4444" /></button>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal open={!!delC} onClose={() => setDelC(null)} title="Excluir cliente" width={400}>
+        <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 8px", fontFamily: F }}>Excluir o cadastro deste cliente?</p>
+        <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 16px", fontFamily: F, lineHeight: 1.6 }}>Os contratos não são apagados: eles ficam sem cliente e voltam a ficar visíveis a toda a equipe.</p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={() => setDelC(null)} style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#64748b", fontFamily: F }}>Cancelar</button>
+          <button onClick={() => remover(delC)} style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#ef4444", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "white", fontFamily: F }}>Excluir</button>
+        </div>
+      </Modal>
+
+      <Modal open={confirmaExpurgo} onClose={() => setConfirmaExpurgo(false)} title="Confirmar exclusão" width={420}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 9, background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><AlertTriangle size={18} color="#ef4444" /></div>
+          <div>
+            <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 4px", fontWeight: 600, fontFamily: F }}>Excluir {marcadosCount} {marcadosCount === 1 ? "documento" : "documentos"}?</p>
+            <p style={{ fontSize: 12, color: "#64748b", margin: 0, fontFamily: F, lineHeight: 1.5 }}>O arquivo e a análise são removidos em definitivo. A exclusão fica registrada no log de acesso.</p>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={() => setConfirmaExpurgo(false)} style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#64748b", fontFamily: F }}>Cancelar</button>
+          <button onClick={expurgar} style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#ef4444", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "white", fontFamily: F }}>Excluir em definitivo</button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
 
 // Areas do direito. A ordem aqui e a ordem na tela: primeiro o que vale para
 // qualquer contrato, depois os conjuntos que so ligam quando o contrato e daquele
@@ -2500,6 +2981,12 @@ export default function ComplianceApp() {
 
   const sidebarW = isMobile ? 0 : (sidebarCollapsed ? 72 : 260);
 
+  // No escopo pessoal cada um manda no que e seu. Na equipe, criar cliente e
+  // designar acesso sao de owner e admin.
+  const podeGerirEscopo = !scopeOrgId || ["owner", "admin"].includes(
+    myOrgs.find(o => o.id === scopeOrgId)?.my_role
+  );
+
   const renderPage = () => {
     switch (currentPage) {
       case "dashboard": return <DashboardPage onNavigate={navigate} onViewReport={viewReport} />;
@@ -2508,6 +2995,7 @@ export default function ComplianceApp() {
       case "history": return <HistoryPage onViewReport={viewReport} showToast={showToast} />;
       case "legislation": return <LegislationPage showToast={showToast} />;
       case "rules": return <RulesPage showToast={showToast} scopeOrgId={scopeOrgId} />;
+      case "clients": return <ClientsPage showToast={showToast} scopeOrgId={scopeOrgId} canManage={podeGerirEscopo} />;
       case "team": return <TeamPage showToast={showToast} user={user} onOrgDeleted={handleOrgDeleted} />;
       default: return <DashboardPage onNavigate={navigate} onViewReport={viewReport} />;
     }

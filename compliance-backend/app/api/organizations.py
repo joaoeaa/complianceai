@@ -113,7 +113,7 @@ async def list_organizations(
     )
 
     result = await db.execute(
-        select(Organization, member_count.label("member_count"))
+        select(Organization, member_count.label("member_count"), OrgMember.role)
         .join(OrgMember, Organization.id == OrgMember.organization_id)
         .where(OrgMember.user_id == current_user.id)
     )
@@ -123,8 +123,9 @@ async def list_organizations(
         OrganizationResponse(
             id=org.id, name=org.name, slug=org.slug, cnpj=org.cnpj,
             is_active=org.is_active, created_at=org.created_at, member_count=count,
+            my_role=role,
         )
-        for org, count in rows
+        for org, count, role in rows
     ]
 
 

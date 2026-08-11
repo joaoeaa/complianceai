@@ -191,6 +191,9 @@ async def list_documents(
     organization_id: Optional[UUID] = Query(
         None, description="Documentos desta equipe; omitido lista os pessoais"
     ),
+    client_id: Optional[UUID] = Query(
+        None, description="Apenas os documentos deste cliente"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -203,6 +206,11 @@ async def list_documents(
         .where(await document_scope_filter(current_user, organization_id, db))
         .order_by(desc(Document.uploaded_at))
     )
+
+    # Filtrar por cliente nao substitui a checagem de sigilo: o filtro de escopo
+    # acima ja removeu o que este usuario nao pode ver.
+    if client_id is not None:
+        query = query.where(Document.client_id == client_id)
 
     if status_filter:
         query = query.where(Document.status == status_filter)

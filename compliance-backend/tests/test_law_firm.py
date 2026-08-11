@@ -531,3 +531,64 @@ async def test_designacao_fica_registrada(
         linha["action"] == "assign" and linha["client_name"] == "Construtora Aurora"
         for linha in log
     )
+
+
+@pytest.mark.asyncio
+async def test_historico_filtra_por_cliente(client: AsyncClient, auth_headers: dict):
+    a = (
+        await client.post(
+            "/api/v1/clients", json={"name": "Cliente A"}, headers=auth_headers
+        )
+    ).json()["id"]
+    b = (
+        await client.post(
+            "/api/v1/clients", json={"name": "Cliente B"}, headers=auth_headers
+        )
+    ).json()["id"]
+    await _upload(client, auth_headers, client_id=a, nome="de-a.pdf")
+    await _upload(client, auth_headers, client_id=b, nome="de-b.pdf")
+    await _upload(client, auth_headers, nome="sem-cliente.pdf")
+
+    todos = (await client.get("/api/v1/documents", headers=auth_headers)).json()
+    assert todos["total"] == 3
+
+    so_a = (
+        await client.get(f"/api/v1/documents?client_id={a}", headers=auth_headers)
+    ).json()
+    assert [d["filename"] for d in so_a["documents"]] == ["de-a.pdf"]
+
+
+@pytest.mark.asyncio
+async def test_filtro_por_cliente_nao_burla_o_sigilo(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    """Pedir o cliente pelo id não pode contornar a falta de designação."""
+    org_id = await _equipe_com_membro(client, auth_headers, admin_headers)
+    cid = (
+        await client.post(
+            "/api/v1/clients",
+            json={"name": "Construtora Aurora", "organization_id": org_id},
+            headers=auth_headers,
+        )
+    ).json()["id"]
+    await _upload(client, auth_headers, org_id=org_id, client_id=cid)
+
+    resp = await client.get(
+        f"/api/v1/documents?organization_id={org_id}&client_id={cid}",
+        headers=admin_headers,
+    )
+    assert resp.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_listagem_de_equipes_devolve_o_papel(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    """A tela precisa do papel para saber se oferece criar cliente e designar."""
+    org_id = await _equipe_com_membro(client, auth_headers, admin_headers)
+
+    do_dono = (await client.get("/api/v1/organizations", headers=auth_headers)).json()
+    assert next(o["my_role"] for o in do_dono if o["id"] == org_id) == "owner"
+
+    do_membro = (await client.get("/api/v1/organizations", headers=admin_headers)).json()
+    assert next(o["my_role"] for o in do_membro if o["id"] == org_id) == "member"

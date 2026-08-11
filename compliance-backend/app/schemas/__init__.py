@@ -277,6 +277,9 @@ class OrganizationResponse(BaseModel):
     is_active: bool
     created_at: datetime
     member_count: int = 0
+    # Papel de quem pediu a lista. A tela precisa dele para saber o que oferecer:
+    # criar cliente e designar acesso são de owner e admin.
+    my_role: Optional[str] = None
 
 class OrganizationDetailResponse(OrganizationResponse):
     members: List[OrgMemberResponse] = []
