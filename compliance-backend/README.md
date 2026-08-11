@@ -1,236 +1,135 @@
 # ComplianceAI — Backend
 
-**Plataforma de IA para Compliance e Auditoria de Documentos Contratuais**
+API FastAPI que faz a análise de conformidade contratual.
 
-Backend completo com FastAPI, PostgreSQL, Celery/Redis e integração com Claude AI (Anthropic).
-
----
-
-## 🏗️ Arquitetura
-
-```
-┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│   Frontend   │────▶│  FastAPI     │────▶│  PostgreSQL  │
-│   (React)    │◀────│  Backend     │◀────│  Database    │
-└─────────────┘     └──────┬──────┘     └──────────────┘
-                           │
-                    ┌──────▼──────┐     ┌──────────────┐
-                    │   Celery     │────▶│  Claude AI   │
-                    │   Worker     │◀────│  (Anthropic) │
-                    └──────┬──────┘     └──────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │    Redis     │
-                    │   (Broker)   │
-                    └─────────────┘
-```
-
-## 📁 Estrutura do Projeto
-
-```
-compliance-backend/
-├── app/
-│   ├── api/                  # Rotas da API REST
-│   │   ├── auth.py           # Login, registro, JWT
-│   │   ├── documents.py      # Upload, listagem, relatórios
-│   │   └── rules.py          # CRUD de regras de conformidade
-│   ├── core/
-│   │   ├── config.py         # Settings (pydantic-settings)
-│   │   ├── database.py       # SQLAlchemy async engine
-│   │   └── security.py       # JWT + bcrypt
-│   ├── models/
-│   │   └── __init__.py       # User, Document, Rule, Analysis
-│   ├── schemas/
-│   │   └── __init__.py       # Pydantic schemas (request/response)
-│   ├── services/
-│   │   ├── ai_analyzer.py    # Integração Claude AI + prompt engineering
-│   │   └── document_extractor.py  # Extração PDF/DOCX
-│   ├── workers/
-│   │   └── tasks.py          # Celery tasks (processamento async)
-│   └── main.py               # FastAPI app entry point
-├── docker-compose.yml        # PostgreSQL + Redis + API + Worker
-├── Dockerfile
-├── requirements.txt
-├── alembic.ini
-└── .env.example
-```
-
-## 🚀 Setup Rápido (Docker)
-
-### 1. Clone e configure
-
-```bash
-cp .env.example .env
-# Edite .env e adicione sua ANTHROPIC_API_KEY
-```
-
-### 2. Suba tudo com Docker Compose
-
-```bash
-docker compose up -d
-```
-
-Isso sobe: PostgreSQL, Redis, API (porta 8000) e Celery Worker.
-
-### 3. Acesse
-
-- **API Docs (Swagger):** http://localhost:8000/docs
-- **Health Check:** http://localhost:8000/health
+> Visão geral do projeto, setup completo e referência da API estão no [README da raiz](../README.md).
+> Este documento cobre apenas o que é específico de trabalhar no backend.
 
 ---
 
-## 🚀 Setup Manual (sem Docker)
-
-### 1. Pré-requisitos
-
-- Python 3.11+
-- PostgreSQL 15+
-- Redis 7+
-- Tesseract OCR (opcional, para PDFs escaneados)
-
-### 2. Instale dependências
+## Rodando
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
+cp .env.example .env          # preencha ANTHROPIC_API_KEY e OPENAI_API_KEY
+docker compose up -d          # postgres + redis + api + worker
 ```
 
-### 3. Configure ambiente
+API em `:8000`, Swagger em `/docs`.
 
-```bash
-cp .env.example .env
-# Edite .env com suas credenciais de DB, Redis e Anthropic
-```
-
-### 4. Crie o banco
-
-```bash
-createdb compliance_db
-# Ou via psql: CREATE DATABASE compliance_db;
-```
-
-### 5. Inicie a API
+Fora do Docker, são dois processos — a API e o worker Celery:
 
 ```bash
 uvicorn app.main:app --reload --port 8000
-```
-
-### 6. Inicie o Celery Worker (em outro terminal)
-
-```bash
 celery -A app.workers.tasks.celery_app worker --loglevel=info
 ```
 
----
-
-## 📡 API Endpoints
-
-### Autenticação
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| POST | `/api/v1/auth/register` | Criar conta |
-| POST | `/api/v1/auth/login` | Login (retorna JWT) |
-| POST | `/api/v1/auth/refresh` | Renovar token |
-| GET | `/api/v1/auth/me` | Dados do usuário logado |
-
-### Documentos
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| POST | `/api/v1/documents/upload` | Upload + iniciar análise |
-| GET | `/api/v1/documents` | Listar documentos |
-| GET | `/api/v1/documents/{id}` | Detalhes do documento |
-| GET | `/api/v1/documents/{id}/report` | Relatório completo |
-| GET | `/api/v1/documents/{id}/status` | Status da análise |
-| DELETE | `/api/v1/documents/{id}` | Excluir (LGPD) |
-
-### Regras
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| GET | `/api/v1/rules` | Listar regras |
-| POST | `/api/v1/rules` | Criar regra (admin) |
-| PATCH | `/api/v1/rules/{id}` | Editar regra (admin) |
-| DELETE | `/api/v1/rules/{id}` | Excluir regra (admin) |
-| PATCH | `/api/v1/rules/{id}/toggle` | Ativar/desativar (admin) |
+O worker é obrigatório: o upload apenas enfileira a análise. Sem worker rodando, o documento fica travado em `processing`.
 
 ---
 
-## 🔒 Segurança
-
-- **Autenticação:** JWT com bcrypt (custo 12) para senhas
-- **Tokens:** Access token (1h) + Refresh token (7d)
-- **RBAC:** Admin vs User (admin para gerenciar regras)
-- **Isolamento:** Cada usuário só acessa seus documentos
-- **LGPD:** Endpoint de exclusão (direito ao esquecimento)
-
----
-
-## 🧠 Fluxo de Análise com IA
-
-```
-Upload PDF/DOCX
-       │
-       ▼
-Salva no disco + DB (status: "uploaded")
-       │
-       ▼
-Celery Task inicia (status: "processing")
-       │
-       ├──▶ 1. Extrair texto (pdfplumber / python-docx)
-       ├──▶ 2. Buscar regras ativas do banco
-       ├──▶ 3. Montar prompt dinâmico
-       ├──▶ 4. Enviar para Claude AI
-       ├──▶ 5. Validar JSON de resposta
-       └──▶ 6. Salvar análise no banco (status: "analyzed")
-               │
-               ▼
-       Frontend exibe relatório
-```
-
----
-
-## 💰 Custo Estimado por Análise
-
-- Documento médio: ~8.000 tokens entrada + ~1.500 tokens saída
-- **Custo por análise: ~$0.04 USD**
-- 1.000 análises/mês: ~$40 USD
-
----
-
-## 🔧 Variáveis de Ambiente
-
-| Variável | Descrição | Default |
-|----------|-----------|---------|
-| `ANTHROPIC_API_KEY` | Chave da API Anthropic | (obrigatório) |
-| `ANTHROPIC_MODEL` | Modelo do Claude | claude-sonnet-4-20250514 |
-| `DATABASE_URL` | String de conexão PostgreSQL | localhost |
-| `REDIS_URL` | URL do Redis | localhost:6379 |
-| `SECRET_KEY` | Chave para JWT | (trocar em prod!) |
-| `MAX_FILE_SIZE_MB` | Tamanho máximo de upload | 10 |
-
----
-
-## 🧪 Testando
+## Comandos
 
 ```bash
-# Login
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@complianceai.com.br","password":"senha123"}'
+pytest                                              # suíte completa
+pytest tests/test_documents.py -v                   # um arquivo
+pytest -k rag                                       # por nome
 
-# Upload (use o token retornado)
-curl -X POST http://localhost:8000/api/v1/documents/upload \
-  -H "Authorization: Bearer SEU_TOKEN" \
-  -F "file=@contrato.pdf"
-
-# Verificar status
-curl http://localhost:8000/api/v1/documents/{id}/status?task_id=TASK_ID \
-  -H "Authorization: Bearer SEU_TOKEN"
-
-# Ver relatório
-curl http://localhost:8000/api/v1/documents/{id}/report \
-  -H "Authorization: Bearer SEU_TOKEN"
+alembic upgrade head                                # aplicar migrations
+alembic revision --autogenerate -m "descricao"      # nova migration
 ```
+
+Com Docker, prefixe com `docker compose exec api`.
+
+---
+
+## Organização do código
+
+```
+app/
+├── api/          # Routers FastAPI — um por domínio, todos sob /api/v1
+├── core/         # config (pydantic-settings), database, security, logging, limiter
+├── models/       # Re-export dos modelos SQLAlchemy definidos em app/__init__.py
+├── schemas/      # Schemas Pydantic de request/response
+├── services/     # Regra de negócio — sem dependência de FastAPI
+├── scripts/      # Seeds de legislação e manutenção de embeddings
+├── workers/      # Tasks Celery
+└── main.py       # Wiring: rotas, middleware, lifespan
+```
+
+Os endpoints ficam finos: validam entrada, chamam um serviço, devolvem o schema. A lógica pesada mora em `services/`.
+
+---
+
+## Comportamento do startup
+
+O `lifespan` em `main.py` só executa em `APP_ENV=development`:
+
+1. `CREATE EXTENSION IF NOT EXISTS vector` (ignorado no SQLite)
+2. `Base.metadata.create_all` — cria as tabelas
+3. Seed do usuário admin e das regras de conformidade padrão
+4. Seed da base legal
+
+Tudo idempotente. **Em produção nada disso roda** — use `alembic upgrade head` e crie os usuários manualmente.
+
+---
+
+## Base legal e embeddings
+
+A base legal vive em duas tabelas: `legal_documents` (uma linha por lei) e `legal_chunks` (uma linha por artigo).
+
+O seed automático do startup popula os artigos, mas **não gera embeddings** — isso exige chamadas à API da OpenAI e é feito em passo separado:
+
+```bash
+python -m app.scripts.generate_embeddings_for_chunks
+```
+
+Sem esse passo os chunks existem, mas a busca semântica não retorna nada — e a análise cai de volta no conhecimento paramétrico do Claude, sem citar artigos.
+
+Outros scripts:
+
+| Script | Função |
+|---|---|
+| `seed_legal_base` | Seed consolidado — 93 artigos de 7 leis. Idempotente, sem embeddings |
+| `seed_all` | Roda os seeds individuais por lei em sequência |
+| `seed_lgpd`, `seed_cdc`, `seed_clt`, ... | Seed de uma lei específica |
+| `generate_embeddings_for_chunks` | Gera embeddings dos chunks que ainda não têm |
+| `repopulate_chunks` | Reconstrói chunks de documentos legais que ficaram sem eles |
+
+Leis cobertas: LGPD (13.709/2018), CDC (8.078/1990), Código Civil (10.406/2002), CLT, Marco Civil da Internet (12.965/2014), Lei Anticorrupção (12.846/2013) e Lei de Licitações (14.133/2021).
+
+---
+
+## Pipeline de análise
+
+`workers/tasks.py` orquestra:
+
+```
+extract_text()          services/document_extractor  — pdfplumber · python-docx · OCR
+    ↓
+regras ativas           SELECT em rules WHERE is_active
+    ↓
+search_similar()        services/rag_service         — busca vetorial em legal_chunks
+    ↓
+analyze()               services/ai_analyzer         — monta prompt, chama Claude, valida JSON
+    ↓
+persiste Analysis       status: analyzed
+```
+
+Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar — o formato de resposta esperado está documentado lá.
+
+---
+
+## Testes
+
+Rodam contra SQLite (`aiosqlite`, arquivo `test.db`), com as chamadas de IA mockadas — a suíte não consome créditos de API nem exige Postgres ou Redis no ar. O rate limiting é desligado via `RATE_LIMIT_ENABLED=false` em `pyproject.toml`.
+
+Ao adicionar um endpoint, cubra pelo menos o happy path e um caso de erro. Fixtures compartilhadas ficam em `tests/conftest.py`.
+
+---
+
+## Notas
+
+- **Async em todo o caminho** — SQLAlchemy async + asyncpg. Nada de I/O bloqueante nos handlers; para código síncrono inevitável, use `asyncio.to_thread` (ver `_seed_legal_database` em `main.py`).
+- **Config** — todas as settings passam por `core/config.py`. Nenhum segredo tem default preenchido; tudo vem do `.env`.
+- **Rate limiting** — SlowAPI. Login em 5/min, upload em 10/min.
+- **Logging** — structlog via `core/logging.py`. Não logue conteúdo de contrato nem PII.
