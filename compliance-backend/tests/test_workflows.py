@@ -13,15 +13,20 @@ _mock_tasks = MagicMock()
 _mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
 sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
+from functools import lru_cache
+
 import pytest
 from httpx import AsyncClient
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
 def _pdf_bytes() -> bytes:
-    """Minimal valid-ish PDF bytes for upload."""
-    return b"%PDF-1.4 minimal test pdf content bytes"
+    """A real PDF with extractable text — the upload endpoint parses the file."""
+    from weasyprint import HTML
+
+    return HTML(string="<p>Contrato de teste para workflow de aprovacao.</p>").write_pdf()
 
 
 async def _upload_doc(client: AsyncClient, headers: dict, filename: str = "contract.pdf") -> str:

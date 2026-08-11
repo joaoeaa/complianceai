@@ -1,6 +1,7 @@
 """
 Documents API routes — upload, list, delete, trigger analysis, check status.
 """
+import asyncio
 import os
 import uuid
 from uuid import UUID
@@ -21,7 +22,7 @@ from app.schemas import (
     AnalysisResponse, ReportResponse, RuleResponse,
     AnalysisStatusResponse,
 )
-from app.services.document_extractor import get_mime_type
+from app.services.document_extractor import get_mime_type, extract_text
 from app.services.report_generator import generate_pdf_report, generate_html_report
 
 settings = get_settings()
@@ -74,8 +75,25 @@ async def upload_document(
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(content)
 
-    # Create document record
+    # Extract the text here, while the uploaded file is still on this container's
+    # disk. API and worker run as separate services in production and do not share
+    # a filesystem, so the text travels through the database instead of the file.
     mime_type = get_mime_type(file.filename)
+    try:
+        extracted = await asyncio.to_thread(extract_text, str(file_path), mime_type)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Não conseguimos ler o conteúdo deste arquivo. Verifique se ele não está protegido por senha ou corrompido.",
+        )
+
+    if not extracted or not extracted.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Não encontramos texto neste documento. Se ele for digitalizado, envie uma versão com texto selecionável.",
+        )
+
+    # Create document record
     doc = Document(
         user_id=current_user.id,
         filename=file.filename,
@@ -83,6 +101,7 @@ async def upload_document(
         file_size=len(content),
         mime_type=mime_type,
         status="uploaded",
+        extracted_text=extracted,
     )
     db.add(doc)
     await db.flush()

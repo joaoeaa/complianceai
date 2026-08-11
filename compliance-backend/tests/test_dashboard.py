@@ -15,6 +15,8 @@ _mock_tasks = MagicMock()
 _mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
 sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
+from functools import lru_cache
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -27,8 +29,12 @@ _TestSession = async_sessionmaker(bind=_engine, class_=AsyncSession, expire_on_c
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
 def _pdf_bytes() -> bytes:
-    return b"%PDF-1.4 minimal test pdf content"
+    """A real PDF with extractable text — the upload endpoint parses the file."""
+    from weasyprint import HTML
+
+    return HTML(string="<p>Contrato de teste para metricas do dashboard.</p>").write_pdf()
 
 
 async def _upload_doc(client: AsyncClient, headers: dict, filename: str = "doc.pdf") -> str:

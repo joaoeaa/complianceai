@@ -9,6 +9,7 @@ Redis/worker connections during tests.
 """
 import sys
 import uuid
+from functools import lru_cache
 from unittest.mock import MagicMock
 
 import pytest
@@ -54,22 +55,33 @@ _TestSession = async_sessionmaker(bind=_engine, class_=AsyncSession, expire_on_c
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
 def _pdf_bytes() -> bytes:
-    """Minimal valid-looking PDF content (passes empty-file check)."""
-    return (
-        b"%PDF-1.4 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj "
-        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj "
-        b"3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\n"
-        b"xref\n0 4\n0000000000 65535 f \n"
-        b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n25\n%%EOF"
-    )
+    """A real PDF carrying extractable text.
+
+    The upload endpoint extracts the document text before persisting it, so the
+    fixture has to be a file the extractor can actually parse — a byte string
+    that merely looks like a PDF is rejected with a 400.
+    """
+    from weasyprint import HTML
+
+    return HTML(
+        string="<p>Contrato de teste. Cláusula de foro: comarca de Recife.</p>"
+    ).write_pdf()
 
 
+@lru_cache(maxsize=1)
 def _docx_bytes() -> bytes:
-    """Minimal non-empty bytes that pass extension/size checks."""
-    # Real DOCX files are ZIP archives; PK magic header + padding is enough
-    # for our upload validation (which only checks extension + size).
-    return b"PK\x03\x04" + b"\x00" * 128
+    """A real DOCX carrying extractable text (see `_pdf_bytes`)."""
+    import io
+
+    from docx import Document as DocxDocument
+
+    docx = DocxDocument()
+    docx.add_paragraph("Contrato de teste. Cláusula de foro: comarca de Recife.")
+    buffer = io.BytesIO()
+    docx.save(buffer)
+    return buffer.getvalue()
 
 
 def _upload(client, headers, filename="doc.pdf", content=None, mime=None):

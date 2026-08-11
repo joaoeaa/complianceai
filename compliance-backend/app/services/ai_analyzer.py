@@ -299,8 +299,14 @@ def analyze_document(
         messages=[{"role": "user", "content": user_prompt}],
     )
 
-    # O modelo pode emitir blocos de thinking antes do texto — pegar o primeiro bloco de texto
-    raw_text = next(block.text for block in response.content if block.type == "text")
+    # O modelo pode emitir blocos de thinking antes do texto. Blocos de thinking não
+    # carregam `text`, então basta pegar o primeiro bloco que traga texto de verdade.
+    raw_text = next(
+        (block.text for block in response.content if isinstance(getattr(block, "text", None), str)),
+        None,
+    )
+    if raw_text is None:
+        raise ValueError("A resposta do modelo não trouxe nenhum bloco de texto")
     logger.info(f"Resposta recebida: {response.usage.input_tokens} input, {response.usage.output_tokens} output tokens")
 
     parsed = _parse_llm_response(raw_text)

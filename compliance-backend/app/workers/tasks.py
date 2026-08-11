@@ -117,14 +117,20 @@ def analyze_document_task(self, document_id: str):
             db.commit()
             logger.info(f"Status atualizado para 'processing': {doc.filename}")
 
-            # 2. Extract text
+            # 2. Get the document text. The API extracts it at upload time and stores
+            # it on the record, since API and worker do not share a filesystem in
+            # production. Falling back to the file covers local runs and older records.
             self.update_state(state="PROGRESS", meta={"stage": "extracting", "progress": 15})
-            logger.info(f"Extraindo texto de {doc.file_path}...")
 
-            extracted_text = extract_text(doc.file_path, doc.mime_type)
-            doc.extracted_text = extracted_text
-            db.commit()
-            logger.info(f"Texto extraído: {len(extracted_text)} caracteres")
+            extracted_text = doc.extracted_text
+            if extracted_text and extracted_text.strip():
+                logger.info(f"Texto obtido do registro: {len(extracted_text)} caracteres")
+            else:
+                logger.info(f"Extraindo texto de {doc.file_path}...")
+                extracted_text = extract_text(doc.file_path, doc.mime_type)
+                doc.extracted_text = extracted_text
+                db.commit()
+                logger.info(f"Texto extraído: {len(extracted_text)} caracteres")
 
             # 3. Fetch active rules
             self.update_state(state="PROGRESS", meta={"stage": "loading_rules", "progress": 30})
