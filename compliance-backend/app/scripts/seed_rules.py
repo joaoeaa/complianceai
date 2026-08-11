@@ -416,16 +416,27 @@ DEFAULT_RULES: list[dict] = [
 ]
 
 
-def seed_rules(db, prune: bool = False) -> tuple[int, int]:
-    """Sincroniza as regras globais. Devolve (inseridas, removidas).
+# Campos que este arquivo define e que, portanto, ele mantém em dia nas regras
+# globais já gravadas. `is_active` entra na lista porque numa regra global ele é
+# o padrão do sistema, não a preferência de ninguém: quem desliga uma global
+# grava uma linha em `rule_overrides`, que este seed não toca.
+_CAMPOS_CANONICOS = ("description", "severity", "criteria", "category", "is_active")
 
-    Insere o que falta, comparando por nome. Com `prune`, remove as regras globais
-    que não pertencem mais a este conjunto, o que serve para aposentar as antigas
-    após uma revisão como esta. Regras pessoais e de equipe nunca são tocadas.
+
+def seed_rules(db, prune: bool = False) -> tuple[int, int, int]:
+    """Sincroniza as regras globais. Devolve (inseridas, atualizadas, removidas).
+
+    Insere o que falta e alinha o que já existe, comparando por nome. Inserir sem
+    alinhar deixaria uma regra antiga presa nos valores do dia em que foi criada:
+    foi o que aconteceu ao introduzir `category`, com as regras já gravadas
+    ficando todas em "geral" enquanto só as novas nasciam na área certa.
+
+    Com `prune`, remove as regras globais que não pertencem mais a este conjunto.
+    Regras pessoais e de equipe nunca são tocadas.
     """
     from app.models import Rule
 
-    canonical = {spec["name"] for spec in DEFAULT_RULES}
+    por_nome = {spec["name"]: spec for spec in DEFAULT_RULES}
 
     globais = db.execute(
         select(Rule).where(Rule.organization_id.is_(None), Rule.user_id.is_(None))
@@ -438,14 +449,27 @@ def seed_rules(db, prune: bool = False) -> tuple[int, int]:
             db.add(Rule(**spec))
             inseridas += 1
 
+    atualizadas = 0
+    for regra in globais:
+        spec = por_nome.get(regra.name)
+        if not spec:
+            continue
+        mudou = False
+        for campo in _CAMPOS_CANONICOS:
+            desejado = spec.get(campo)
+            if desejado is not None and getattr(regra, campo) != desejado:
+                setattr(regra, campo, desejado)
+                mudou = True
+        atualizadas += mudou
+
     removidas = 0
     if prune:
         for regra in globais:
-            if regra.name not in canonical:
+            if regra.name not in por_nome:
                 db.delete(regra)
                 removidas += 1
 
-    return inseridas, removidas
+    return inseridas, atualizadas, removidas
 
 
 def main() -> None:
@@ -456,15 +480,16 @@ def main() -> None:
     engine = create_engine(settings.DATABASE_URL_SYNC)
     try:
         with Session(engine) as db:
-            inseridas, removidas = seed_rules(db, prune=prune)
+            inseridas, atualizadas, removidas = seed_rules(db, prune=prune)
             db.commit()
 
         ativas = sum(1 for r in DEFAULT_RULES if r["is_active"])
         print(f"Conjunto canônico: {len(DEFAULT_RULES)} regras ({ativas} ativas por padrão).")
         print(f"Inseridas: {inseridas}")
+        print(f"Atualizadas: {atualizadas}")
         if prune:
             print(f"Removidas (fora do conjunto): {removidas}")
-        elif not inseridas:
+        elif not (inseridas or atualizadas):
             print("Nada a fazer. Use --prune para aposentar regras antigas.")
     finally:
         engine.dispose()
