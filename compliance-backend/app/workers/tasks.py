@@ -150,6 +150,9 @@ def analyze_document_task(self, document_id: str):
                 legal_context = build_legal_context_sync(extracted_text, rules_data, db)
                 logger.info(f"Contexto legal RAG: {len(legal_context)} chunks relevantes")
             except Exception as rag_err:
+                # Postgres aborts the whole transaction on a failed statement, so the
+                # rollback is what lets the analysis still be saved further down.
+                db.rollback()
                 logger.warning(f"RAG context failed (continuing without): {rag_err}")
 
             # 3.6 Load feedback learnings for AI calibration (learning loop)
@@ -160,6 +163,7 @@ def analyze_document_task(self, document_id: str):
                 if feedback_learnings:
                     logger.info(f"Feedback learnings carregados: {len(feedback_learnings)} regras com feedback")
             except Exception as fb_err:
+                db.rollback()
                 logger.warning(f"Feedback loading failed (continuing without): {fb_err}")
 
             # 4. Call AI for analysis
