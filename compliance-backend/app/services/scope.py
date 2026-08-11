@@ -14,10 +14,10 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Document, OrgMember, User
+from app.models import Client, ClientAssignment, Document, OrgMember, User
 
 MANAGER_ROLES = ("owner", "admin")
 
@@ -46,15 +46,67 @@ async def require_org_membership(
     return membership
 
 
-def document_scope_filter(user: User, organization_id: Optional[UUID]):
+async def accessible_client_ids(
+    user: User, organization_id: Optional[UUID], db: AsyncSession
+) -> Optional[set[UUID]]:
+    """Clientes que este usuário enxerga na equipe. `None` significa "todos".
+
+    Sócio, aqui representado por owner e admin, enxerga a carteira inteira. Os
+    demais enxergam apenas os clientes a que foram designados, que é o sigilo
+    profissional posto em código: não basta pertencer ao escritório para ler o
+    caso de outro advogado.
+    """
+    if organization_id is None:
+        return None
+
+    membership = await require_org_membership(organization_id, user, db)
+    if membership.role in MANAGER_ROLES:
+        return None
+
+    result = await db.execute(
+        select(ClientAssignment.client_id)
+        .join(Client, Client.id == ClientAssignment.client_id)
+        .where(
+            Client.organization_id == organization_id,
+            ClientAssignment.user_id == user.id,
+        )
+    )
+    return set(result.scalars().all())
+
+
+async def document_scope_filter(
+    user: User, organization_id: Optional[UUID], db: AsyncSession
+):
     """Condição que seleciona os documentos visíveis no escopo escolhido.
 
-    Chame `require_org_membership` antes quando `organization_id` vier preenchido —
-    esta função assume que o acesso já foi autorizado.
+    Documento sem cliente continua visível a todo membro da equipe. Só amarrar o
+    documento a um cliente é que restringe, o que mantém quem ainda não organizou
+    a carteira funcionando como antes em vez de perder acesso ao próprio acervo.
     """
-    if organization_id is not None:
-        return Document.organization_id == organization_id
-    return (Document.user_id == user.id) & Document.organization_id.is_(None)
+    if organization_id is None:
+        return (Document.user_id == user.id) & Document.organization_id.is_(None)
+
+    base = Document.organization_id == organization_id
+    permitidos = await accessible_client_ids(user, organization_id, db)
+    if permitidos is None:
+        return base
+
+    return base & or_(
+        Document.client_id.is_(None), Document.client_id.in_(permitidos)
+    )
+
+
+async def can_read_client(
+    client_id: Optional[UUID],
+    organization_id: Optional[UUID],
+    user: User,
+    db: AsyncSession,
+) -> bool:
+    """O usuário pode ver o material deste cliente?"""
+    if client_id is None or organization_id is None:
+        return True
+    permitidos = await accessible_client_ids(user, organization_id, db)
+    return permitidos is None or client_id in permitidos
 
 
 async def get_document_for_read(
@@ -72,6 +124,10 @@ async def get_document_for_read(
 
     if doc.organization_id is not None:
         await require_org_membership(doc.organization_id, user, db)
+        if not await can_read_client(doc.client_id, doc.organization_id, user, db):
+            # 404, e não 403: para quem não foi designado, o documento de outro
+            # cliente não deve nem existir.
+            raise HTTPException(status_code=404, detail="Documento não encontrado")
         return doc
 
     if doc.user_id != user.id:

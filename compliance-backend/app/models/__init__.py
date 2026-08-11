@@ -6,6 +6,7 @@ from app import (
     Organization, OrgMember, ContractTemplate, RuleOverride,
     ApprovalWorkflow, WebhookConfig,
     AnalysisFeedback, AlertFeedback,
+    Client, ClientAssignment, AccessLog,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "Organization", "OrgMember", "ContractTemplate", "RuleOverride",
     "ApprovalWorkflow", "WebhookConfig",
     "AnalysisFeedback", "AlertFeedback",
+    "Client", "ClientAssignment", "AccessLog",
 ]

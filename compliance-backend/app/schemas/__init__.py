@@ -491,3 +491,89 @@ class DashboardResponse(BaseModel):
     overview: DashboardOverview
     top_alerts: List[AlertFrequency]
     risk_trend: List[RiskTrend]
+
+
+# ─── Camada de escritório: clientes, designações e log de acesso ──────────────
+
+class ClientCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    document: Optional[str] = None          # CNPJ ou CPF
+    notes: Optional[str] = None
+    # Prazo de guarda em meses. Nulo guarda por tempo indeterminado.
+    retention_months: Optional[int] = Field(None, ge=1, le=1200)
+    # Preenchido cria um cliente do escritório; omitido cria na carteira pessoal.
+    organization_id: Optional[UUID] = None
+
+
+class ClientUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    document: Optional[str] = None
+    notes: Optional[str] = None
+    retention_months: Optional[int] = Field(None, ge=1, le=1200)
+    is_active: Optional[bool] = None
+
+
+class ClientAssigneeResponse(BaseModel):
+    user_id: UUID
+    email: str
+    full_name: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ClientResponse(BaseModel):
+    id: UUID
+    name: str
+    document: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: bool = True
+    retention_months: Optional[int] = None
+    scope: str = "user"                     # organization | user
+    document_count: int = 0
+    assignee_count: int = 0
+    # Quantos documentos deste cliente já passaram do prazo de guarda.
+    expired_count: int = 0
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AssignClientRequest(BaseModel):
+    email: str
+
+
+class ExpiredDocumentResponse(BaseModel):
+    """Documento que passou do prazo de guarda do cliente.
+
+    Nada é apagado sozinho: esta é a fila que alguém revisa antes de confirmar.
+    """
+    document_id: UUID
+    filename: str
+    client_id: UUID
+    client_name: str
+    uploaded_at: datetime
+    retention_months: int
+    expired_on: datetime
+    days_overdue: int
+
+
+class PurgeRequest(BaseModel):
+    document_ids: List[UUID] = Field(..., min_length=1)
+
+
+class AccessLogResponse(BaseModel):
+    id: UUID
+    action: str
+    detail: Optional[str] = None
+    created_at: datetime
+    user_id: Optional[UUID] = None
+    user_email: Optional[str] = None
+    document_id: Optional[UUID] = None
+    client_id: Optional[UUID] = None
+    client_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True

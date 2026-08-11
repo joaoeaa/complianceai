@@ -17,7 +17,7 @@ from app.core.limiter import limiter
 from app.core.config import get_settings
 from app.core.database import engine, Base
 from app.core.logging import setup_logging, get_logger
-from app.api import auth, documents, rules, legislation, organizations, templates, workflows, webhooks, dashboard
+from app.api import auth, documents, rules, legislation, organizations, templates, workflows, webhooks, dashboard, clients
 from app.core.limiter import limiter
 settings = get_settings()
 
@@ -154,6 +154,7 @@ app.include_router(templates.router, prefix="/api/v1")
 app.include_router(workflows.router, prefix="/api/v1")
 app.include_router(webhooks.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(clients.router, prefix="/api/v1")
 
 
 # ─── Health Check ───

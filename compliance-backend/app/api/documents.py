@@ -18,14 +18,16 @@ from app.core.database import get_db
 from app.core.limiter import limiter
 from app.core.config import get_settings
 from app.core.security import get_current_user
-from app.models import User, Document, Analysis, Rule
+from app.models import User, Document, Analysis, Rule, Client
 from app.schemas import (
     DocumentResponse, DocumentListResponse,
     AnalysisResponse, ReportResponse, RuleResponse,
     AnalysisStatusResponse, AlertResolutionUpdate,
 )
 from app.services.document_extractor import get_mime_type, extract_text
+from app.services.audit import record_access
 from app.services.scope import (
+    can_read_client,
     document_scope_filter,
     get_document_for_delete,
     get_document_for_read,
@@ -78,6 +80,9 @@ async def upload_document(
     organization_id: Optional[UUID] = Form(
         None, description="Envia para o escopo desta equipe; omitido usa o escopo pessoal"
     ),
+    client_id: Optional[UUID] = Form(
+        None, description="Cliente do escritório a que este contrato pertence"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -87,6 +92,22 @@ async def upload_document(
     """
     if organization_id is not None:
         await require_org_membership(organization_id, current_user, db)
+
+    # Amarrar o documento a um cliente é o que define quem vai poder lê-lo, então
+    # a designação precisa ser conferida na entrada, e não só na leitura.
+    if client_id is not None:
+        cliente = (
+            await db.execute(select(Client).where(Client.id == client_id))
+        ).scalar_one_or_none()
+        pertence = cliente is not None and (
+            cliente.organization_id == organization_id
+            if organization_id is not None
+            else cliente.user_id == current_user.id
+        )
+        if not pertence:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        if not await can_read_client(client_id, organization_id, current_user, db):
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     # Validate extension
     ext = Path(file.filename).suffix.lower()
@@ -139,10 +160,13 @@ async def upload_document(
         status="uploaded",
         extracted_text=extracted,
         organization_id=organization_id,
+        client_id=client_id,
     )
     db.add(doc)
     await db.flush()
     await db.refresh(doc)
+
+    await record_access(db, user=current_user, action="analyze", document=doc)
 
     # Trigger async analysis via Celery
     from app.workers.tasks import analyze_document_task
@@ -176,7 +200,7 @@ async def list_documents(
 
     query = (
         select(Document)
-        .where(document_scope_filter(current_user, organization_id))
+        .where(await document_scope_filter(current_user, organization_id, db))
         .order_by(desc(Document.uploaded_at))
     )
 
@@ -239,6 +263,7 @@ async def get_report(
 ):
     """Get the full analysis report for a document."""
     doc = await get_document_for_read(document_id, current_user, db)
+    await record_access(db, user=current_user, action="view", document=doc)
 
     analysis_result = await db.execute(select(Analysis).where(Analysis.document_id == doc.id))
     analysis = analysis_result.scalar_one_or_none()
@@ -326,6 +351,7 @@ async def download_report_html(
     from app.services.report_generator import generate_html_report, generate_pdf_report
 
     doc = await get_document_for_read(document_id, current_user, db)
+    await record_access(db, user=current_user, action="export", document=doc)
 
     analysis_result = await db.execute(select(Analysis).where(Analysis.document_id == doc.id))
     analysis = analysis_result.scalar_one_or_none()
@@ -421,6 +447,7 @@ async def download_original(
     documento de equipe para qualquer membro.
     """
     doc = await get_document_for_read(document_id, current_user, db)
+    await record_access(db, user=current_user, action="download", document=doc)
 
     caminho = Path(doc.file_path)
     if not caminho.is_file():
@@ -461,6 +488,7 @@ async def delete_document(
 ):
     """Exclui o documento e a análise. Em equipe: quem enviou ou os responsáveis."""
     doc = await get_document_for_delete(document_id, current_user, db)
+    await record_access(db, user=current_user, action="delete", document=doc)
 
     # Delete file from disk
     if os.path.exists(doc.file_path):
@@ -481,6 +509,7 @@ async def download_report(
     """
     # 1) Buscar documento respeitando o escopo (pessoal ou da equipe)
     document = await get_document_for_read(document_id, current_user, db)
+    await record_access(db, user=current_user, action="export", document=document)
 
     # 2) Buscar a análise mais recente deste documento
     analysis_res = await db.execute(

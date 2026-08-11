@@ -51,7 +51,7 @@ async def get_dashboard(
     if organization_id:
         await require_org_membership(organization_id, current_user, db)
 
-    doc_filter = [document_scope_filter(current_user, organization_id)]
+    doc_filter = [await document_scope_filter(current_user, organization_id, db)]
     analysis_filter = []
 
     # ── Overview metrics ──

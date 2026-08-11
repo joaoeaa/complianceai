@@ -116,6 +116,10 @@ class Document(Base):
     )
     uploaded_at = Column(DateTime(timezone=True), default=utcnow)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+    # Cliente do escritorio. Define quem enxerga o documento e qual prazo de
+    # guarda vale para ele. Nulo mantem o comportamento anterior: todo membro da
+    # equipe enxerga.
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     template_id = Column(UUID(as_uuid=True), ForeignKey("contract_templates.id", ondelete="SET NULL"), nullable=True)
     extracted_text = Column(Text, nullable=True)  # stores the extracted text for reprocessing
 
@@ -376,4 +380,127 @@ class AlertFeedback(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     analysis = relationship("Analysis")
+    user = relationship("User")
+
+
+class Client(Base):
+    """Cliente do escritorio: a unidade de sigilo profissional.
+
+    Um escritorio nao atende "documentos", atende clientes, e o dever de sigilo e
+    por cliente, nao por arquivo. Ligar o documento ao cliente e o que permite
+    restringir acesso a quem foi designado, medir o volume por cliente e aplicar
+    prazo de guarda diferente para cada um.
+
+    Segue a mesma convencao de escopo das regras: organization_id preenchido e um
+    cliente do escritorio; user_id preenchido e a carteira de quem trabalha
+    sozinho. Nunca os dois.
+    """
+
+    __tablename__ = "clients"
+    __table_args__ = (
+        sa.UniqueConstraint("organization_id", "name", name="uq_client_org_name"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    document = Column(String(18), nullable=True)      # CNPJ ou CPF
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    organization_id = Column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+
+    # Prazo de guarda em meses. Nulo significa guardar por tempo indeterminado,
+    # que e o padrao: apagar por engano e pior do que guardar demais.
+    retention_months = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    assignments = relationship(
+        "ClientAssignment", back_populates="client", cascade="all, delete-orphan"
+    )
+
+    @property
+    def scope(self) -> str:
+        if self.organization_id is not None:
+            return "organization"
+        if self.user_id is not None:
+            return "user"
+        return "orphan"
+
+
+class ClientAssignment(Base):
+    """Designacao de um membro da equipe a um cliente.
+
+    E o que sustenta o sigilo: sem uma linha aqui, o membro nao enxerga os
+    documentos do cliente. Owner e admin da organizacao veem todos os clientes
+    independentemente de designacao, como socio de escritorio.
+    """
+
+    __tablename__ = "client_assignments"
+    __table_args__ = (
+        sa.UniqueConstraint("client_id", "user_id", name="uq_client_assignment"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id = Column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_at = Column(DateTime(timezone=True), default=utcnow)
+
+    client = relationship("Client", back_populates="assignments")
+    user = relationship("User")
+
+
+class AccessLog(Base):
+    """Quem viu o que, e quando.
+
+    Um escritorio precisa saber responder isso: em auditoria, em incidente de
+    vazamento e em disputa interna sobre quem teve acesso a um caso. Guardar so o
+    que o sistema alterou nao responde a pergunta, porque o dano de sigilo esta na
+    leitura.
+
+    Sem PII no registro: usuario e documento aparecem por UUID, seguindo o mesmo
+    criterio dos logs da aplicacao.
+    """
+
+    __tablename__ = "access_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    organization_id = Column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    # Nulos quando a acao nao e sobre um documento, como designar alguem a um
+    # cliente. SET NULL no documento para o registro sobreviver ao expurgo: saber
+    # que alguem leu um documento hoje apagado e justamente o que a auditoria quer.
+    document_id = Column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    client_id = Column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True
+    )
+    action = Column(
+        Enum(
+            "view", "download", "export", "analyze", "delete",
+            "assign", "unassign", "denied",
+            name="access_action",
+        ),
+        nullable=False,
+    )
+    # Nome do arquivo no momento do acesso, para o registro continuar legivel
+    # depois que o documento for apagado.
+    detail = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+
     user = relationship("User")
