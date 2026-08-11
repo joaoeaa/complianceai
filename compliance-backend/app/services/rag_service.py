@@ -22,8 +22,12 @@ logger = logging.getLogger(__name__)
 
 # ─── Article Reference Extraction ───
 
+# Acima de 999 a numeracao usa ponto de milhar ("Art. 1.337"). Sem o grupo
+# (?:\.\d{3})* o Codigo Civil inteiro acima do artigo 999 era lido como "Art. 1".
+_NUM_ARTIGO = r"\d+(?:\.\d{3})*"
+
 ARTICLE_PATTERN = re.compile(
-    r"(Art\.\s*\d+[\w°ºª]*(?:\s*,?\s*§\s*\d+[\w°ºª]*)?)"
+    rf"(Art\.\s*{_NUM_ARTIGO}[\w°ºª]*(?:\s*,?\s*§\s*\d+[\w°ºª]*)?)"
     r"|"
     r"(§\s*\d+[\w°ºª]*)"
     r"|"
@@ -31,8 +35,11 @@ ARTICLE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# O \s* inicial e necessario: o texto oficial vem com espaco depois da quebra de
+# linha (" Art. 7o"), e sem ele nenhum artigo era reconhecido como inicio de
+# segmento. A lei inteira virava um bloco unico, cortado por tamanho.
 ARTICLE_START_PATTERN = re.compile(
-    r"^(Art\.\s*\d+[\w°ºª]*\.?\s)",
+    rf"^[ 	]*(Art\.\s*{_NUM_ARTIGO}[\w°ºª]*\.?\s)",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -97,7 +104,14 @@ def chunk_text(
     chunk_index = 0
 
     for segment in segments:
-        article_ref = _extract_article_ref(segment)
+        # So conta como artigo o segmento que comeca com "Art. N". O preambulo
+        # institucional mencionava artigos no meio do texto e acabava rotulado
+        # com uma referencia que nao era a dele.
+        article_ref = (
+            _extract_article_ref(segment)
+            if ARTICLE_START_PATTERN.match(segment)
+            else None
+        )
 
         if len(segment) <= chunk_size:
             chunks.append({
@@ -125,7 +139,10 @@ def chunk_text(
 
                 chunk_content = segment[start:end].strip()
                 if chunk_content:
-                    sub_ref = _extract_article_ref(chunk_content) or article_ref
+                    # A referencia do artigo vale para todos os seus pedacos. Sem isto
+                    # um pedaco iniciado por "§ 3o" ficava rotulado com o paragrafo, e
+                    # uma citacao a "Art. 52" nao casava com o trecho recuperado.
+                    sub_ref = article_ref or _extract_article_ref(chunk_content)
                     chunks.append({
                         "content": chunk_content,
                         "article_ref": sub_ref,

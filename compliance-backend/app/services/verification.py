@@ -24,9 +24,10 @@ from typing import Any, Iterable, Optional
 _PAGE_MARKER = re.compile(r"---\s*Página\s+\d+\s*---", re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s+")
 
-# "Art. 7º", "art 7", "Artigo 7-A", "Art. 5º, § 2º"
+# "Art. 7º", "art 7", "Artigo 7-A", "Art. 5º, § 2º", "Art. 1.337"
+# O ponto de milhar aparece nas leis longas, como o Código Civil.
 _ARTICLE = re.compile(
-    r"\bart(?:igo)?\.?\s*(\d+)\s*(?:[ºo°]|-?[A-Z]\b)?",
+    r"\bart(?:igo)?\.?\s*(\d+(?:\.\d{3})*)\s*(?:[ºo°]|-?[A-Z]\b)?",
     re.IGNORECASE,
 )
 
@@ -134,7 +135,8 @@ def verify_excerpt(excerpt: Optional[str], document_text: str) -> str:
 
 
 def _article_numbers(text: str) -> set[str]:
-    return {m.group(1) for m in _ARTICLE.finditer(text or "")}
+    """Números de artigo citados, sem o ponto de milhar, para comparar."""
+    return {m.group(1).replace(".", "") for m in _ARTICLE.finditer(text or "")}
 
 
 # O alerta costuma citar a sigla ("LGPD") enquanto a base legal guarda o número

@@ -2,7 +2,7 @@
 
 **Plataforma de IA para análise de conformidade de contratos sob a legislação brasileira.**
 
-Faça upload de um contrato em PDF ou DOCX e receba um relatório de conformidade apontando cláusulas problemáticas, riscos e recomendações, com fundamentação nos artigos de lei aplicáveis (LGPD, CDC, Código Civil, CLT, Marco Civil da Internet, Lei Anticorrupção e Lei de Licitações).
+Faça upload de um contrato em PDF ou DOCX e receba um relatório de conformidade apontando cláusulas problemáticas, riscos e recomendações, com fundamentação nos artigos de lei aplicáveis. A base cobre dez leis brasileiras na íntegra: Código Civil, CLT, CDC, LGPD, Marco Civil, Lei Anticorrupção, Lei de Licitações, Lei do Inquilinato, Lei das S.A. e Lei de Propriedade Industrial.
 
 A análise combina **Claude AI** com **RAG** (busca semântica sobre uma base de legislação vetorizada), de modo que cada alerta cita o dispositivo legal em que se apoia em vez de depender apenas do conhecimento paramétrico do modelo.
 
@@ -368,10 +368,17 @@ Em `APP_ENV=development` as tabelas são criadas automaticamente no startup. **E
 Em um banco novo de produção, depois das migrations, popule a base:
 
 ```bash
-python -m app.scripts.seed_legal_base              # 7 leis, sem embeddings
-python -m app.scripts.generate_embeddings_for_chunks   # sem isto o RAG fica mudo
-python -m app.scripts.seed_rules                   # as 11 regras globais
+python -m app.scripts.ingest_planalto --todas   # baixa as 10 leis e gera embeddings
+python -m app.scripts.seed_rules                # as 18 regras globais
 ```
+
+O `ingest_planalto` busca o texto oficial no Planalto, fatia por artigo e gera os
+embeddings, tudo num passo. Leva alguns minutos e custa poucos centavos de API.
+Use `--listar` para ver o catálogo, `--lei <slug>` para uma só e `--dry-run` para
+conferir a contagem de artigos sem gravar nada.
+
+O `seed_legal_base` antigo continua no repositório, mas cobria 53 artigos escolhidos
+a mão e foi substituído por este.
 
 ---
 
