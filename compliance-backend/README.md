@@ -1,4 +1,4 @@
-# ComplianceAI — Backend
+# ComplianceAI: Backend
 
 API FastAPI que faz a análise de conformidade contratual.
 
@@ -16,7 +16,7 @@ docker compose up -d          # postgres + redis + api + worker
 
 API em `:8000`, Swagger em `/docs`.
 
-Fora do Docker, são dois processos — a API e o worker Celery:
+Fora do Docker, são dois processos, a API e o worker Celery:
 
 ```bash
 uvicorn app.main:app --reload --port 8000
@@ -46,11 +46,11 @@ Com Docker, prefixe com `docker compose exec api`.
 
 ```
 app/
-├── api/          # Routers FastAPI — um por domínio, todos sob /api/v1
+├── api/          # Routers FastAPI: um por domínio, todos sob /api/v1
 ├── core/         # config (pydantic-settings), database, security, logging, limiter
 ├── models/       # Re-export dos modelos SQLAlchemy definidos em app/__init__.py
 ├── schemas/      # Schemas Pydantic de request/response
-├── services/     # Regra de negócio — sem dependência de FastAPI
+├── services/     # Regra de negócio: sem dependência de FastAPI
 ├── scripts/      # Seeds de legislação e manutenção de embeddings
 ├── workers/      # Tasks Celery
 └── main.py       # Wiring: rotas, middleware, lifespan
@@ -65,11 +65,11 @@ Os endpoints ficam finos: validam entrada, chamam um serviço, devolvem o schema
 O `lifespan` em `main.py` só executa em `APP_ENV=development`:
 
 1. `CREATE EXTENSION IF NOT EXISTS vector` (ignorado no SQLite)
-2. `Base.metadata.create_all` — cria as tabelas
+2. `Base.metadata.create_all`: cria as tabelas
 3. Seed do usuário admin e das regras de conformidade padrão
 4. Seed da base legal
 
-Tudo idempotente. **Em produção nada disso roda** — use `alembic upgrade head` e crie os usuários manualmente.
+Tudo idempotente. **Em produção nada disso roda**: use `alembic upgrade head` e crie os usuários manualmente.
 
 ---
 
@@ -77,19 +77,19 @@ Tudo idempotente. **Em produção nada disso roda** — use `alembic upgrade hea
 
 A base legal vive em duas tabelas: `legal_documents` (uma linha por lei) e `legal_chunks` (uma linha por artigo).
 
-O seed automático do startup popula os artigos, mas **não gera embeddings** — isso exige chamadas à API da OpenAI e é feito em passo separado:
+O seed automático do startup popula os artigos, mas **não gera embeddings**: isso exige chamadas à API da OpenAI e é feito em passo separado:
 
 ```bash
 python -m app.scripts.generate_embeddings_for_chunks
 ```
 
-Sem esse passo os chunks existem, mas a busca semântica não retorna nada — e a análise cai de volta no conhecimento paramétrico do Claude, sem citar artigos.
+Sem esse passo os chunks existem, mas a busca semântica não retorna nada, e a análise cai de volta no conhecimento paramétrico do Claude, sem citar artigos.
 
 Outros scripts:
 
 | Script | Função |
 |---|---|
-| `seed_legal_base` | Seed consolidado — 93 artigos de 7 leis. Idempotente, sem embeddings |
+| `seed_legal_base` | Seed consolidado: 93 artigos de 7 leis. Idempotente, sem embeddings |
 | `seed_all` | Roda os seeds individuais por lei em sequência |
 | `seed_lgpd`, `seed_cdc`, `seed_clt`, ... | Seed de uma lei específica |
 | `generate_embeddings_for_chunks` | Gera embeddings dos chunks que ainda não têm |
@@ -104,24 +104,24 @@ Leis cobertas: LGPD (13.709/2018), CDC (8.078/1990), Código Civil (10.406/2002)
 `workers/tasks.py` orquestra:
 
 ```
-extract_text()          services/document_extractor  — pdfplumber · python-docx · OCR
+extract_text()          services/document_extractor   pdfplumber · python-docx · OCR
     ↓
 regras ativas           SELECT em rules WHERE is_active
     ↓
-search_similar()        services/rag_service         — busca vetorial em legal_chunks
+search_similar()        services/rag_service          busca vetorial em legal_chunks
     ↓
-analyze()               services/ai_analyzer         — monta prompt, chama Claude, valida JSON
+analyze()               services/ai_analyzer          monta prompt, chama Claude, valida JSON
     ↓
 persiste Analysis       status: analyzed
 ```
 
-Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar — o formato de resposta esperado está documentado lá.
+Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar. O formato de resposta esperado está documentado lá.
 
 ---
 
 ## Testes
 
-Rodam contra SQLite (`aiosqlite`, arquivo `test.db`), com as chamadas de IA mockadas — a suíte não consome créditos de API nem exige Postgres ou Redis no ar. O rate limiting é desligado via `RATE_LIMIT_ENABLED=false` em `pyproject.toml`.
+Rodam contra SQLite (`aiosqlite`, arquivo `test.db`), com as chamadas de IA mockadas: a suíte não consome créditos de API nem exige Postgres ou Redis no ar. O rate limiting é desligado via `RATE_LIMIT_ENABLED=false` em `pyproject.toml`.
 
 Ao adicionar um endpoint, cubra pelo menos o happy path e um caso de erro. Fixtures compartilhadas ficam em `tests/conftest.py`.
 
@@ -129,7 +129,7 @@ Ao adicionar um endpoint, cubra pelo menos o happy path e um caso de erro. Fixtu
 
 ## Notas
 
-- **Async em todo o caminho** — SQLAlchemy async + asyncpg. Nada de I/O bloqueante nos handlers; para código síncrono inevitável, use `asyncio.to_thread` (ver `_seed_legal_database` em `main.py`).
-- **Config** — todas as settings passam por `core/config.py`. Nenhum segredo tem default preenchido; tudo vem do `.env`.
-- **Rate limiting** — SlowAPI. Login em 5/min, upload em 10/min.
-- **Logging** — structlog via `core/logging.py`. Não logue conteúdo de contrato nem PII.
+- **Async em todo o caminho**: SQLAlchemy async + asyncpg. Nada de I/O bloqueante nos handlers; para código síncrono inevitável, use `asyncio.to_thread` (ver `_seed_legal_database` em `main.py`).
+- **Config**: todas as settings passam por `core/config.py`. Nenhum segredo tem default preenchido; tudo vem do `.env`.
+- **Rate limiting**: SlowAPI. Login em 5/min, upload em 10/min.
+- **Logging**: structlog via `core/logging.py`. Não logue conteúdo de contrato nem PII.
