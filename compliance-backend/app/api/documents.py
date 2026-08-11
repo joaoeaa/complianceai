@@ -38,6 +38,28 @@ router = APIRouter(prefix="/documents", tags=["Documentos"])
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 
 
+async def _rules_for_document(doc: Document, db: AsyncSession) -> list[dict]:
+    """Regras que valem para este documento, no escopo dele.
+
+    O checklist do relatorio precisa refletir o mesmo conjunto que o worker usou
+    na analise. Buscar todas as regras da tabela vazava para o relatorio de uma
+    conta os nomes das regras criadas por outras contas e equipes.
+    """
+    from app.services.rule_scope import apply_overrides, overrides_query, visible_rules_query
+
+    rules = (
+        await db.execute(
+            visible_rules_query(user_id=doc.user_id, organization_id=doc.organization_id)
+        )
+    ).scalars().all()
+    overrides = (
+        await db.execute(
+            overrides_query(user_id=doc.user_id, organization_id=doc.organization_id)
+        )
+    ).scalars().all()
+    return [r for r in apply_overrides(rules, overrides) if r["is_active"]]
+
+
 def _doc_to_response(doc: Document) -> DocumentResponse:
     """Convert a Document model to response schema, including analysis data if available."""
     resp = DocumentResponse.model_validate(doc)
@@ -222,9 +244,8 @@ async def get_report(
     if not analysis:
         raise HTTPException(status_code=404, detail="Análise ainda não disponível para este documento")
 
-    # Fetch rules for checklist
-    rules_result = await db.execute(select(Rule).where(Rule.is_active == True))
-    rules = rules_result.scalars().all()
+    # Regras do escopo do documento, nao da tabela inteira
+    rules = await _rules_for_document(doc, db)
 
     doc.analysis = analysis
     return ReportResponse(
@@ -290,8 +311,10 @@ async def download_report_html(
     if not analysis:
         raise HTTPException(status_code=404, detail="Análise não disponível para este documento")
 
-    rules_result = await db.execute(select(Rule).where(Rule.is_active == True))
-    rules = [{"name": r.name, "severity": r.severity} for r in rules_result.scalars().all()]
+    rules = [
+        {"name": r["name"], "severity": r["severity"]}
+        for r in await _rules_for_document(doc, db)
+    ]
 
     analysis_data = {
         "risk_score": analysis.risk_score,
@@ -342,9 +365,11 @@ async def download_report(
     if not analysis:
         raise HTTPException(status_code=404, detail="Nenhuma análise encontrada para este documento.")
 
-    # 3) Regras ativas para o checklist
-    rules_res = await db.execute(select(Rule).where(Rule.is_active == True))
-    rules = [{"name": r.name, "severity": r.severity} for r in rules_res.scalars().all()]
+    # 3) Regras do escopo do documento para o checklist
+    rules = [
+        {"name": r["name"], "severity": r["severity"]}
+        for r in await _rules_for_document(document, db)
+    ]
 
     # 4) Preparar dados para geração
     doc_dict = {"filename": document.filename}

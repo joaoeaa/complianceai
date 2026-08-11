@@ -90,3 +90,16 @@ async def test_refresh_token(client: AsyncClient):
     })
     assert resp.status_code == 200
     assert "access_token" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_registro_ignora_papel_enviado_pelo_cliente(client: AsyncClient):
+    """O /docs e publico: aceitar `role` permitia virar admin sem autorizacao."""
+    resp = await client.post("/api/v1/auth/register", json={
+        "email": "escalada@test.com",
+        "password": "senha123456",
+        "full_name": "Tentativa",
+        "role": "admin",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["role"] == "user"

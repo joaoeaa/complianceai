@@ -134,35 +134,29 @@ async def get_dashboard(
     ]
 
     # ── Risk trend (monthly) ──
-    if doc_filter:
-        trend_q = (
-            select(
-                func.to_char(Analysis.analyzed_at, "YYYY-MM").label("period"),
-                func.avg(Analysis.risk_score).label("avg_score"),
-                func.count(Analysis.id).label("doc_count"),
-            )
-            .join(Document, Analysis.document_id == Document.id)
-            .where(*doc_filter)
-            .group_by("period")
-            .order_by("period")
-            .limit(12)
+    # Agrupa por ano e mes com `extract`, que existe em qualquer dialeto. A versao
+    # anterior usava func.to_char, exclusiva do Postgres, e quebrava nos testes.
+    ano = func.extract("year", Analysis.analyzed_at)
+    mes = func.extract("month", Analysis.analyzed_at)
+
+    trend_q = (
+        select(
+            ano.label("ano"),
+            mes.label("mes"),
+            func.avg(Analysis.risk_score).label("avg_score"),
+            func.count(Analysis.id).label("doc_count"),
         )
-    else:
-        trend_q = (
-            select(
-                func.to_char(Analysis.analyzed_at, "YYYY-MM").label("period"),
-                func.avg(Analysis.risk_score).label("avg_score"),
-                func.count(Analysis.id).label("doc_count"),
-            )
-            .group_by("period")
-            .order_by("period")
-            .limit(12)
-        )
+        .join(Document, Analysis.document_id == Document.id)
+        .where(*doc_filter)
+        .group_by(ano, mes)
+        .order_by(ano, mes)
+        .limit(12)
+    )
 
     trend_result = (await db.execute(trend_q)).all()
     risk_trend = [
         RiskTrend(
-            period=row.period or "unknown",
+            period=f"{int(row.ano):04d}-{int(row.mes):02d}" if row.ano and row.mes else "unknown",
             avg_risk_score=round(float(row.avg_score), 1) if row.avg_score else 0.0,
             document_count=row.doc_count,
         )

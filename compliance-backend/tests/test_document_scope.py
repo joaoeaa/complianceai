@@ -189,3 +189,77 @@ async def test_org_admin_deletes_any_team_document(
 
     resp = await client.delete(f"/api/v1/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 204
+
+
+# ─── Checklist do relatorio ───────────────────────────────────────────────────
+
+async def _inject_analysis(doc_id: str):
+    """Cria uma analise minima para o documento poder gerar relatorio."""
+    import uuid as _uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app import Analysis, Document
+
+    engine = create_async_engine("sqlite+aiosqlite:///./test.db")
+    Session = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as db:
+        doc = (await db.execute(
+            select(Document).where(Document.id == _uuid.UUID(doc_id))
+        )).scalar_one()
+        doc.status = "analyzed"
+        db.add(Analysis(
+            document_id=doc.id, risk_score=50, summary="teste",
+            alerts=[], missing_clauses=[],
+        ))
+        await db.commit()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_checklist_nao_vaza_regras_de_outra_conta(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    """O checklist do relatorio mostra so as regras do escopo do documento.
+
+    Regressao: os endpoints de relatorio buscavam a tabela inteira, entao o
+    relatorio de uma conta listava as regras criadas por outras contas.
+    """
+    # A outra conta cria uma regra pessoal dela.
+    criada = await client.post("/api/v1/rules", json={
+        "name": "Regra da outra conta", "criteria": "Criterio alheio",
+    }, headers=admin_headers)
+    assert criada.status_code == 201
+    # Sanidade: a regra existe e esta ativa, entao uma busca sem escopo a traria.
+    # Sem esta checagem, o teste passaria mesmo que o checklist viesse vazio.
+    assert criada.json()["is_active"] is True
+
+    # Esta conta envia um documento e recebe o relatorio.
+    doc_id = await _upload(client, auth_headers)
+    await _inject_analysis(doc_id)
+
+    resp = await client.get(f"/api/v1/documents/{doc_id}/report", headers=auth_headers)
+    assert resp.status_code == 200
+
+    nomes = [r["name"] for r in resp.json()["rules_checked"]]
+    assert "Regra da outra conta" not in nomes
+
+
+@pytest.mark.asyncio
+async def test_checklist_de_documento_pessoal_ignora_regra_de_equipe(
+    client: AsyncClient, auth_headers: dict
+):
+    """Documento pessoal segue as regras pessoais, mesmo que o dono tenha equipe."""
+    org_id = await _create_org(client, auth_headers)
+    criada = await client.post("/api/v1/rules", json={
+        "name": "Regra so da equipe", "criteria": "x", "organization_id": org_id,
+    }, headers=auth_headers)
+    assert criada.status_code == 201 and criada.json()["is_active"] is True
+
+    doc_id = await _upload(client, auth_headers)  # pessoal
+    await _inject_analysis(doc_id)
+
+    resp = await client.get(f"/api/v1/documents/{doc_id}/report", headers=auth_headers)
+    nomes = [r["name"] for r in resp.json()["rules_checked"]]
+    assert "Regra so da equipe" not in nomes

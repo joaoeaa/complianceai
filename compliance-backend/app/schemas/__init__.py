@@ -44,7 +44,9 @@ class UserCreate(BaseModel):
     email: str = Field(..., min_length=5, max_length=255)
     password: str = Field(..., min_length=6)
     full_name: Optional[str] = None
-    role: UserRole = UserRole.user
+    # `role` nao entra aqui de proposito. Aceitar o papel vindo do cliente permitia
+    # que qualquer visitante se cadastrasse como admin pelo /docs, que e publico.
+    # Promocao a admin passa pelo banco.
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
