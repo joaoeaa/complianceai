@@ -277,3 +277,62 @@ async def test_list_organizations_counts_all_members(
         resp = await client.get("/api/v1/organizations", headers=headers)
         org = next(o for o in resp.json() if o["id"] == org_id)
         assert org["member_count"] == 2
+
+
+async def test_only_owner_deletes_organization(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    """Membro comum recebe 403; o dono exclui."""
+    created = await client.post(
+        "/api/v1/organizations",
+        json={"name": "Descartavel", "slug": "descartavel"},
+        headers=auth_headers,
+    )
+    org_id = created.json()["id"]
+    await client.post(
+        f"/api/v1/organizations/{org_id}/members",
+        json={"email": "admin@test.com", "role": "admin"},
+        headers=auth_headers,
+    )
+
+    # Nem admin da organizacao pode excluir: so o owner.
+    resp = await client.delete(f"/api/v1/organizations/{org_id}", headers=admin_headers)
+    assert resp.status_code == 403
+
+    resp = await client.delete(f"/api/v1/organizations/{org_id}", headers=auth_headers)
+    assert resp.status_code == 204
+
+    resp = await client.get("/api/v1/organizations", headers=auth_headers)
+    assert not any(o["id"] == org_id for o in resp.json())
+
+
+async def test_deleting_org_keeps_documents_as_personal(
+    client: AsyncClient, auth_headers: dict
+):
+    """Documentos sobrevivem a exclusao da equipe e voltam ao escopo pessoal."""
+    from functools import lru_cache
+
+    @lru_cache(maxsize=1)
+    def pdf():
+        from weasyprint import HTML
+        return HTML(string="<p>Contrato da equipe.</p>").write_pdf()
+
+    created = await client.post(
+        "/api/v1/organizations",
+        json={"name": "Temporaria", "slug": "temporaria"},
+        headers=auth_headers,
+    )
+    org_id = created.json()["id"]
+
+    up = await client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("contrato.pdf", pdf(), "application/pdf")},
+        data={"organization_id": org_id},
+        headers=auth_headers,
+    )
+    doc_id = up.json()["document_id"]
+
+    await client.delete(f"/api/v1/organizations/{org_id}", headers=auth_headers)
+
+    resp = await client.get("/api/v1/documents", headers=auth_headers)
+    assert any(d["id"] == doc_id for d in resp.json()["documents"])

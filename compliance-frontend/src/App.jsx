@@ -1720,7 +1720,7 @@ const ROLE_META = {
   member: { label: "Membro", color: "#059669", bg: "#f0fdf4", border: "#bbf7d0", icon: User },
 };
 
-const TeamPage = ({ showToast, user }) => {
+const TeamPage = ({ showToast, user, onOrgDeleted }) => {
   const [orgs, setOrgs] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgDetail, setOrgDetail] = useState(null);
@@ -1733,6 +1733,8 @@ const TeamPage = ({ showToast, user }) => {
   const [saving, setSaving] = useState(false);
   const [editRole, setEditRole] = useState(null); // { userId, currentRole }
   const [confirmRemove, setConfirmRemove] = useState(null); // userId
+  const [confirmDeleteOrg, setConfirmDeleteOrg] = useState(false);
+  const [deletingOrg, setDeletingOrg] = useState(false);
 
   const fetchOrgs = useCallback(async () => {
     setLoading(true);
@@ -1796,6 +1798,23 @@ const TeamPage = ({ showToast, user }) => {
     }
   };
 
+  const handleDeleteOrg = async () => {
+    setDeletingOrg(true);
+    try {
+      await api.deleteOrganization(selectedOrg.id);
+      showToast("Equipe excluída.", "success");
+      setConfirmDeleteOrg(false);
+      onOrgDeleted?.(selectedOrg.id);
+      setSelectedOrg(null);
+      setOrgDetail(null);
+      fetchOrgs();
+    } catch (err) {
+      showToast(err.message || "Erro ao excluir equipe", "error");
+    } finally {
+      setDeletingOrg(false);
+    }
+  };
+
   const handleRemoveMember = async (userId) => {
     try {
       await api.removeOrgMember(selectedOrg.id, userId);
@@ -1812,6 +1831,7 @@ const TeamPage = ({ showToast, user }) => {
     const members = orgDetail?.members || [];
     const myMembership = members.find(m => m.user_email === user?.email);
     const isAdmin = myMembership && (myMembership.role === "owner" || myMembership.role === "admin");
+    const isOwner = myMembership && myMembership.role === "owner";
 
     return (
       <div>
@@ -1826,11 +1846,18 @@ const TeamPage = ({ showToast, user }) => {
               <span style={{ fontSize: 10, fontWeight: 600, color: selectedOrg.is_active ? "#16a34a" : "#dc2626", background: selectedOrg.is_active ? "#f0fdf4" : "#fef2f2", padding: "2px 8px", borderRadius: 10 }}>{selectedOrg.is_active ? "Ativa" : "Inativa"}</span>
             </div>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {isOwner && (
+            <button onClick={() => setConfirmDeleteOrg(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "white", color: "#dc2626", padding: "9px 15px", borderRadius: 10, border: "1px solid #fecaca", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F }}>
+              <Trash2 size={14} /> Excluir equipe
+            </button>
+          )}
           {isAdmin && (
             <button onClick={() => setShowAddMember(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", padding: "9px 18px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F }}>
               <UserPlus size={15} /> Adicionar membro
             </button>
           )}
+          </div>
         </div>
 
         {/* Regras da equipe */}
@@ -1915,6 +1942,31 @@ const TeamPage = ({ showToast, user }) => {
         </Modal>
 
         {/* Confirm Remove Modal */}
+        <Modal open={confirmDeleteOrg} onClose={() => setConfirmDeleteOrg(false)} title="Excluir equipe" width={440}>
+          <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 12px", fontFamily: F }}>
+            Excluir <strong>{selectedOrg.name}</strong> é permanente. Antes de confirmar:
+          </p>
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 9, padding: "11px 13px", marginBottom: 11 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 5, fontFamily: F }}>Será apagado</div>
+            <div style={{ fontSize: 12, color: "#7f1d1d", fontFamily: F, lineHeight: 1.5 }}>
+              As regras da equipe, os templates de contrato, os webhooks e a lista de membros.
+            </div>
+          </div>
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 9, padding: "11px 13px", marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#15803d", marginBottom: 5, fontFamily: F }}>Será preservado</div>
+            <div style={{ fontSize: 12, color: "#14532d", fontFamily: F, lineHeight: 1.5 }}>
+              Os documentos e suas análises. Cada um volta para o escopo pessoal de quem enviou.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={() => setConfirmDeleteOrg(false)} style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#64748b", fontFamily: F }}>Cancelar</button>
+            <button onClick={handleDeleteOrg} disabled={deletingOrg} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "none", background: "#ef4444", cursor: deletingOrg ? "default" : "pointer", fontSize: 12, fontWeight: 600, color: "white", fontFamily: F, opacity: deletingOrg ? 0.7 : 1 }}>
+              {deletingOrg && <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />}
+              Excluir equipe
+            </button>
+          </div>
+        </Modal>
+
         <Modal open={!!confirmRemove} onClose={() => setConfirmRemove(null)} title="Remover membro" width={380}>
           <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 16px", fontFamily: F }}>Tem certeza? O membro será removido da organização.</p>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -2087,6 +2139,15 @@ export default function ComplianceApp() {
     return () => { cancelled = true; };
   }, [loggedIn]);
 
+  // Equipe excluida: some da lista e, se era o escopo ativo, volta para o pessoal.
+  const handleOrgDeleted = (orgId) => {
+    setMyOrgs(prev => prev.filter(o => o.id !== orgId));
+    if (scopeOrgId === orgId) {
+      api.setScope(null);
+      setScopeOrgId(null);
+    }
+  };
+
   const changeScope = (orgId) => {
     api.setScope(orgId);
     setScopeOrgId(orgId);
@@ -2134,7 +2195,7 @@ export default function ComplianceApp() {
       case "history": return <HistoryPage onViewReport={viewReport} showToast={showToast} />;
       case "legislation": return <LegislationPage showToast={showToast} />;
       case "rules": return <RulesPage showToast={showToast} scopeOrgId={scopeOrgId} />;
-      case "team": return <TeamPage showToast={showToast} user={user} />;
+      case "team": return <TeamPage showToast={showToast} user={user} onOrgDeleted={handleOrgDeleted} />;
       default: return <DashboardPage onNavigate={navigate} onViewReport={viewReport} />;
     }
   };

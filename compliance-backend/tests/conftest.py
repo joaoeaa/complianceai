@@ -10,6 +10,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.core.database import Base, get_db
@@ -22,6 +23,19 @@ app.state.limiter.enabled = False
 TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
 
 engine_test = create_async_engine(TEST_DB_URL, echo=False)
+
+
+@event.listens_for(engine_test.sync_engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, _record):
+    """Liga as foreign keys no SQLite.
+
+    O SQLite as ignora por padrao, entao ON DELETE CASCADE e SET NULL nao rodariam
+    nos testes, mesmo valendo no Postgres. Sem isto, a suite passa em cenarios que
+    quebrariam em producao.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 TestSession = async_sessionmaker(
     bind=engine_test, class_=AsyncSession, expire_on_commit=False
 )
