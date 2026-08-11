@@ -1568,6 +1568,13 @@ const LegislationPage = ({ showToast }) => {
 };
 
 // ── Rules ──
+// Origem da regra: padrão do sistema, própria do usuário ou da equipe.
+const SCOPE_META = {
+  global: { label: "Padrão", color: "#64748b", bg: "#f1f5f9", border: "#e2e8f0", hint: "Regra padrão do sistema. Você pode desativá-la para você, mas não editá-la." },
+  user: { label: "Minha", color: "#6366f1", bg: "#eef2ff", border: "#c7d2fe", hint: "Regra sua, válida apenas na sua conta." },
+  organization: { label: "Equipe", color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe", hint: "Regra da equipe, compartilhada com os membros." },
+};
+
 const RulesPage = ({ showToast }) => {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1661,12 +1668,19 @@ const RulesPage = ({ showToast }) => {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: sev.color, background: sev.bg, padding: "2px 9px", borderRadius: 20, border: `1px solid ${sev.border}`, fontFamily: F, flexShrink: 0 }}>{sev.label}</span>
+                {SCOPE_META[rule.scope] && (
+                  <span style={{ fontSize: 10, fontWeight: 600, color: SCOPE_META[rule.scope].color, background: SCOPE_META[rule.scope].bg, padding: "2px 8px", borderRadius: 20, border: `1px solid ${SCOPE_META[rule.scope].border}`, fontFamily: F, flexShrink: 0 }} title={SCOPE_META[rule.scope].hint}>{SCOPE_META[rule.scope].label}</span>
+                )}
                 <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{rule.name}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 1, fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rule.description}</div></div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                <button onClick={() => openEdit(rule)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Editar"><Edit3 size={12} color="#6366f1" /></button>
-                <button onClick={() => setDelC(rule.id)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Excluir"><Trash2 size={12} color="#ef4444" /></button>
-                <button onClick={() => toggle(rule.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{rule.is_active ? <ToggleRight size={24} color="#6366f1" /> : <ToggleLeft size={24} color="#cbd5e1" />}</button>
+                {rule.editable !== false && (
+                  <>
+                    <button onClick={() => openEdit(rule)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Editar"><Edit3 size={12} color="#6366f1" /></button>
+                    <button onClick={() => setDelC(rule.id)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Excluir"><Trash2 size={12} color="#ef4444" /></button>
+                  </>
+                )}
+                <button onClick={() => toggle(rule.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }} title={rule.is_active ? "Desativar para mim" : "Ativar para mim"}>{rule.is_active ? <ToggleRight size={24} color="#6366f1" /> : <ToggleLeft size={24} color="#cbd5e1" />}</button>
               </div>
             </div>
             <div style={{ marginTop: 8, padding: "7px 10px", background: "#f8fafc", borderRadius: 5 }}><div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", marginBottom: 2, fontFamily: F }}>Critério:</div><div style={{ fontSize: 11, color: "#475569", fontFamily: F }}>{rule.criteria}</div></div>
