@@ -263,3 +263,70 @@ async def test_checklist_de_documento_pessoal_ignora_regra_de_equipe(
     resp = await client.get(f"/api/v1/documents/{doc_id}/report", headers=auth_headers)
     nomes = [r["name"] for r in resp.json()["rules_checked"]]
     assert "Regra so da equipe" not in nomes
+
+
+# ─── Download do arquivo original ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_download_do_original_devolve_o_arquivo(
+    client: AsyncClient, auth_headers: dict
+):
+    doc_id = await _upload(client, auth_headers)
+
+    resp = await client.get(f"/api/v1/documents/{doc_id}/download", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "contrato.pdf" in resp.headers["content-disposition"]
+
+
+@pytest.mark.asyncio
+async def test_download_respeita_o_escopo(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    """Documento pessoal de outra conta nao pode ser baixado."""
+    doc_id = await _upload(client, auth_headers)
+
+    resp = await client.get(f"/api/v1/documents/{doc_id}/download", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_membro_da_equipe_baixa_documento_do_colega(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    org_id = await _create_org(client, auth_headers)
+    await _add_member(client, auth_headers, org_id, "admin@test.com", "member")
+    doc_id = await _upload(client, auth_headers, org_id)
+
+    resp = await client.get(f"/api/v1/documents/{doc_id}/download", headers=admin_headers)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_arquivo_perdido_responde_410_com_explicacao(
+    client: AsyncClient, auth_headers: dict
+):
+    """Documentos anteriores ao volume persistente perderam o arquivo."""
+    import os
+    import uuid as _uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app import Document
+
+    doc_id = await _upload(client, auth_headers)
+
+    engine = create_async_engine("sqlite+aiosqlite:///./test.db")
+    Session = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as db:
+        doc = (await db.execute(
+            select(Document).where(Document.id == _uuid.UUID(doc_id))
+        )).scalar_one()
+        os.remove(doc.file_path)
+    await engine.dispose()
+
+    resp = await client.get(f"/api/v1/documents/{doc_id}/download", headers=auth_headers)
+    assert resp.status_code == 410
+    assert "não está mais disponível" in resp.json()["detail"]

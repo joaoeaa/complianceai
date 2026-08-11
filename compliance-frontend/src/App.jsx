@@ -144,8 +144,17 @@ class ApiClient {
   async deleteDocument(id) {
     return this.request(`/documents/${id}`, { method: "DELETE" });
   }
+  async downloadOriginal(docId) {
+    return this._downloadFile(`${API_BASE}/documents/${docId}/download`, "documento");
+  }
+
   async downloadReportPdf(docId) {
-    const url = `${API_BASE}/documents/${docId}/report/pdf`;
+    return this._downloadFile(`${API_BASE}/documents/${docId}/report/pdf`, "relatorio.pdf");
+  }
+
+  // Download autenticado: o navegador nao envia o token num link comum, entao o
+  // arquivo vem por fetch e e entregue como blob.
+  async _downloadFile(url, fallbackName) {
     const headers = {};
     if (this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
@@ -170,7 +179,7 @@ class ApiClient {
     }
 
     const disposition = res.headers.get("Content-Disposition");
-    let filename = "relatorio.pdf";
+    let filename = fallbackName;
     if (disposition) {
       const match = disposition.match(/filename="?([^";\n]+)"?/);
       if (match) filename = match[1];
@@ -874,7 +883,21 @@ const ReportPage = ({ docId, onBack, showToast }) => {
   const [overallComment, setOverallComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [downloadingOriginal, setDownloadingOriginal] = useState(false);
   const [existingFeedback, setExistingFeedback] = useState(false);
+
+  const downloadOriginal = async () => {
+    setDownloadingOriginal(true);
+    try {
+      await api.downloadOriginal(docId);
+    } catch (err) {
+      // 410: o arquivo se perdeu antes do volume persistente. A mensagem do
+      // backend ja explica isso, entao basta repassar.
+      showToast(err.message || "Não foi possível baixar o arquivo", "error");
+    } finally {
+      setDownloadingOriginal(false);
+    }
+  };
 
   const downloadPDF = async () => {
     setDownloadingPdf(true);
@@ -990,6 +1013,15 @@ const ReportPage = ({ docId, onBack, showToast }) => {
         >
           {downloadingPdf ? <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} /> : <Download size={15} />}
           {downloadingPdf ? "Gerando..." : "Exportar PDF"}
+        </button>
+        <button
+          onClick={downloadOriginal}
+          disabled={downloadingOriginal}
+          title="Baixar o arquivo exatamente como foi enviado"
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "white", color: "#475569", padding: "10px 16px", borderRadius: 10, border: "1px solid #e2e8f0", cursor: downloadingOriginal ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, fontFamily: F }}
+        >
+          {downloadingOriginal ? <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={15} />}
+          {downloadingOriginal ? "Baixando..." : "Original"}
         </button>
       </div>
 

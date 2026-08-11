@@ -9,6 +9,7 @@ import aiofiles
 import re
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
@@ -326,6 +327,50 @@ async def download_report_html(
 
     html = generate_html_report(doc_data, analysis_data, rules)
     return HTMLResponse(content=html)
+
+
+@router.get("/{document_id}/download")
+async def download_original(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Baixa o arquivo exatamente como foi enviado.
+
+    Mesmo controle de acesso do relatorio: documento pessoal so para o dono,
+    documento de equipe para qualquer membro.
+    """
+    doc = await get_document_for_read(document_id, current_user, db)
+
+    caminho = Path(doc.file_path)
+    if not caminho.is_file():
+        # Acontece com documentos anteriores ao volume persistente: a analise
+        # continua no banco, o arquivo nao. Dizer isso e melhor que um 404 seco.
+        raise HTTPException(
+            status_code=410,
+            detail="O arquivo original não está mais disponível. A análise permanece acessível no relatório.",
+        )
+
+    conteudo = await asyncio.to_thread(caminho.read_bytes)
+
+    # Cabecalho HTTP nao aceita acento; mantem a extensao e envia o nome original
+    # em filename* para os navegadores que sabem ler.
+    base, _, ext = doc.filename.rpartition(".")
+    ascii_name = re.sub(r"[^\w\-.]", "_", base or doc.filename)
+    if ext:
+        ascii_name = f"{ascii_name}.{ext}"
+    utf8_name = quote(doc.filename)
+
+    return Response(
+        content=conteudo,
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={
+            # RFC 5987: as duas aspas simples fazem parte da sintaxe charset'lang'valor
+            "Content-Disposition": (
+                f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
+            )
+        },
+    )
 
 
 @router.delete("/{document_id}", status_code=204)
