@@ -373,31 +373,14 @@ const RiskGauge = ({ score, size = 140 }) => {
 // ── Login / Register Page ──
 const LoginPage = ({ onLogin }) => {
   const [mode, setMode] = useState("login"); // "login" | "register"
-  const [email, setEmail] = useState("admin@complianceai.com.br");
-  const [password, setPassword] = useState("senha123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [backendOnline, setBackendOnline] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      try {
-        const res = await fetch(`${API_ORIGIN}/health`, { method: "GET", signal: AbortSignal.timeout(3000) });
-        if (!cancelled) setBackendOnline(res.ok);
-      } catch {
-        if (!cancelled) setBackendOnline(false);
-      }
-    };
-    check();
-    const interval = setInterval(check, 5000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, []);
-
-  const switchMode = (m) => { setMode(m); setError(""); setSuccess(""); if (m === "register") { setEmail(""); setPassword(""); } else { setEmail("admin@complianceai.com.br"); setPassword("senha123"); } };
+  const switchMode = (m) => { setMode(m); setError(""); setSuccess(""); setEmail(""); setPassword(""); };
 
   const handleLogin = async () => {
     setError("");
@@ -476,12 +459,6 @@ const LoginPage = ({ onLogin }) => {
         <div style={{ textAlign: "center", marginTop: 18 }}>
           <span style={{ fontSize: 13, color: "#64748b" }}>{isLogin ? "Não tem conta?" : "Já tem conta?"} </span>
           <button onClick={() => switchMode(isLogin ? "register" : "login")} style={{ background: "none", border: "none", color: "#6366f1", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: F, textDecoration: "underline" }}>{isLogin ? "Criar conta" : "Fazer login"}</button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center", marginTop: 14 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: backendOnline === null ? "#f59e0b" : backendOnline ? "#10b981" : "#ef4444", transition: "background 0.3s" }} />
-          <span style={{ fontSize: 11, color: "#64748b" }}>
-            {backendOnline === null ? "Verificando backend..." : backendOnline ? `Backend conectado em ${API_ORIGIN}` : "Backend offline — verifique se a API está no ar"}
-          </span>
         </div>
       </div>
     </div>
