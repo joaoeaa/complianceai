@@ -132,6 +132,9 @@ class Rule(Base):
     description = Column(Text)
     severity = Column(Enum("high", "medium", "low", name="severity_level"), nullable=False, default="medium")
     criteria = Column(Text, nullable=False)
+    # Area do direito. Serve para ligar ou desligar um conjunto inteiro conforme o
+    # tipo de contrato em revisao: regras de locacao nao ajudam num contrato de TI.
+    category = Column(String(40), nullable=False, default="geral", server_default="geral")
     # Escopo da regra:
     #   organization_id e user_id nulos -> regra global (padrao do sistema, somente leitura)
     #   user_id preenchido              -> regra pessoal do usuario

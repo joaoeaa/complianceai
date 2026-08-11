@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models import Rule, RuleOverride, User
-from app.schemas import RuleCreate, RuleResponse, RuleUpdate
+from app.schemas import RuleCategoryToggle, RuleCreate, RuleResponse, RuleUpdate
 from app.services.scope import require_org_membership as _require_org_membership
 from app.services.rule_scope import apply_overrides, overrides_query, visible_rules_query
 
@@ -117,6 +117,7 @@ async def create_rule(
         description=data.description,
         severity=data.severity,
         criteria=data.criteria,
+        category=data.category or "geral",
         organization_id=data.organization_id,
         user_id=None if data.organization_id else current_user.id,
     )
@@ -155,6 +156,63 @@ async def delete_rule(
     rule = await _get_rule_or_404(rule_id, db)
     await _require_can_edit(rule, current_user, db)
     await db.delete(rule)
+
+
+@router.patch("/categoria/{category}", response_model=List[RuleResponse])
+async def toggle_category(
+    category: str,
+    body: RuleCategoryToggle,
+    organization_id: Optional[uuid.UUID] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Liga ou desliga todas as regras de uma área do direito.
+
+    Revisar um contrato de locação exige ligar cinco regras e, ao terminar,
+    desligar as cinco. Fazer isso uma a uma é o tipo de atrito que faz a pessoa
+    deixar tudo ligado e conviver com falso positivo.
+    """
+    if organization_id is not None:
+        await _require_org_membership(organization_id, current_user, db, must_manage=True)
+
+    regras = (
+        await db.execute(
+            visible_rules_query(user_id=current_user.id, organization_id=organization_id)
+        )
+    ).scalars().all()
+    da_area = [r for r in regras if (r.category or "geral") == category]
+    if not da_area:
+        raise HTTPException(status_code=404, detail="Área não encontrada")
+
+    scope_user_id = None if organization_id else current_user.id
+    existentes = {
+        o.rule_id: o
+        for o in (
+            await db.execute(overrides_query(user_id=current_user.id, organization_id=organization_id))
+        ).scalars().all()
+    }
+
+    resultado = []
+    for regra in da_area:
+        if regra.scope == "global":
+            override = existentes.get(regra.id)
+            if override:
+                override.is_active = body.is_active
+            else:
+                override = RuleOverride(
+                    rule_id=regra.id,
+                    user_id=scope_user_id,
+                    organization_id=organization_id,
+                    is_active=body.is_active,
+                )
+                db.add(override)
+            resultado.append(apply_overrides([regra], [override])[0])
+        else:
+            regra.is_active = body.is_active
+            resultado.append(apply_overrides([regra], [])[0])
+
+    await db.flush()
+    return resultado
 
 
 @router.patch("/{rule_id}/toggle", response_model=RuleResponse)

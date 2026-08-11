@@ -44,6 +44,7 @@ DEFAULT_RULES: list[dict] = [
             "o local de execução do contrato. Citar o foro eleito e as sedes no trecho."
         ),
         "is_active": True,
+        "category": "geral",
     },
     {
         "name": f"Prazo de pagamento acima de {PRAZO_PAGAMENTO_DIAS} dias",
@@ -58,6 +59,7 @@ DEFAULT_RULES: list[dict] = [
             "condições que tornem o prazo indeterminado na prática, como aceite sem prazo definido."
         ),
         "is_active": True,
+        "category": "geral",
     },
     {
         "name": "Ausência de cláusula de confidencialidade",
@@ -69,6 +71,7 @@ DEFAULT_RULES: list[dict] = [
             "a sistemas. Não alertar em contratos sem troca de informação sensível."
         ),
         "is_active": True,
+        "category": "geral",
     },
     {
         "name": f"Multa rescisória acima de {MULTA_RESCISORIA_PCT}%",
@@ -83,6 +86,7 @@ DEFAULT_RULES: list[dict] = [
             "inflada, como projeção de anos futuros em contrato sem prazo definido."
         ),
         "is_active": True,
+        "category": "geral",
     },
     {
         "name": "Vigência indeterminada",
@@ -94,6 +98,7 @@ DEFAULT_RULES: list[dict] = [
             "a critério exclusivo de uma das partes."
         ),
         "is_active": True,
+        "category": "geral",
     },
 
     # ─── LGPD, Lei 13.709/2018 ──────────────────────────────────────────────
@@ -109,6 +114,7 @@ DEFAULT_RULES: list[dict] = [
             "determinada."
         ),
         "is_active": True,
+        "category": "protecao_de_dados",
     },
     {
         "name": "LGPD: direitos do titular",
@@ -121,6 +127,7 @@ DEFAULT_RULES: list[dict] = [
             "direitos."
         ),
         "is_active": True,
+        "category": "protecao_de_dados",
     },
     {
         "name": "LGPD: transferência internacional",
@@ -132,6 +139,7 @@ DEFAULT_RULES: list[dict] = [
             "proteção adequado ou salvaguardas como cláusulas contratuais padrão."
         ),
         "is_active": True,
+        "category": "protecao_de_dados",
     },
     {
         "name": "LGPD: medidas de segurança",
@@ -144,6 +152,7 @@ DEFAULT_RULES: list[dict] = [
             "quem não controla o tratamento."
         ),
         "is_active": True,
+        "category": "protecao_de_dados",
     },
     {
         "name": "LGPD: dados sensíveis",
@@ -156,6 +165,7 @@ DEFAULT_RULES: list[dict] = [
             "consentimento destacado."
         ),
         "is_active": True,
+        "category": "protecao_de_dados",
     },
 
     # ─── Código Civil, Lei 10.406/2002 ──────────────────────────────────────
@@ -169,6 +179,7 @@ DEFAULT_RULES: list[dict] = [
             "qualquer indenização, ou quando forem unilaterais em favor de uma só parte."
         ),
         "is_active": True,
+        "category": "civil",
     },
     {
         "name": "Desequilíbrio contratual",
@@ -180,6 +191,7 @@ DEFAULT_RULES: list[dict] = [
             "descrevendo a assimetria concreta encontrada, não a mera existência de vantagem."
         ),
         "is_active": True,
+        "category": "civil",
     },
 
     # ─── Trabalhista, CLT e Lei 13.429/2017 ─────────────────────────────────
@@ -195,6 +207,7 @@ DEFAULT_RULES: list[dict] = [
             "de renúncia a verbas trabalhistas."
         ),
         "is_active": True,
+        "category": "trabalhista",
     },
     {
         "name": "Terceirização fora dos requisitos legais",
@@ -206,6 +219,7 @@ DEFAULT_RULES: list[dict] = [
             "alerta se a responsabilidade subsidiária for afastada por cláusula."
         ),
         "is_active": False,
+        "category": "trabalhista",
     },
 
     # ─── Anticorrupção, Lei 12.846/2013 ─────────────────────────────────────
@@ -219,6 +233,7 @@ DEFAULT_RULES: list[dict] = [
             "Gerar alerta se ausente em contrato entre empresas."
         ),
         "is_active": True,
+        "category": "anticorrupcao",
     },
 
     # ─── CDC, Lei 8.078/1990. Desativadas: só se aplicam a contrato de consumo ──
@@ -232,6 +247,7 @@ DEFAULT_RULES: list[dict] = [
             "da prova em prejuízo do consumidor, alteração unilateral do preço."
         ),
         "is_active": False,
+        "category": "consumidor",
     },
     {
         "name": "CDC: direito de arrependimento",
@@ -243,6 +259,7 @@ DEFAULT_RULES: list[dict] = [
             "ou condicionado."
         ),
         "is_active": False,
+        "category": "consumidor",
     },
 
     # ─── Marco Civil, Lei 12.965/2014. Desativada: só serviços digitais ─────
@@ -256,7 +273,146 @@ DEFAULT_RULES: list[dict] = [
             "de fornecimento a terceiros."
         ),
         "is_active": False,
+        "category": "internet",
     },
+# ─── Locação não residencial, Lei 8.245/1991 ────────────────────────────
+    # Desativadas por padrão: só fazem sentido em contrato de locação.
+    {
+        "name": "Locação: renúncia à ação renovatória",
+        "description": "A renovação compulsória é direito do locatário empresário (Arts. 51 e 71)",
+        "severity": "high",
+        "criteria": (
+            "Verificar cláusula que renuncie, afaste ou condicione o direito de renovação "
+            "compulsória da locação não residencial. Gerar alerta ao encontrar renúncia "
+            "antecipada, ainda que redigida como declaração do locatário."
+        ),
+        "is_active": False,
+        "category": "locacao",
+    },
+    {
+        "name": "Locação: renúncia a indenização por benfeitorias",
+        "description": "Benfeitorias necessárias são indenizáveis e permitem retenção (Art. 35)",
+        "severity": "medium",
+        "criteria": (
+            "Verificar se o contrato afasta indenização ou direito de retenção por benfeitorias. "
+            "Gerar alerta quando a renúncia alcançar benfeitorias necessárias, e não apenas as "
+            "úteis ou voluptuárias."
+        ),
+        "is_active": False,
+        "category": "locacao",
+    },
+    {
+        "name": "Locação: garantias cumuladas",
+        "description": "É vedado exigir mais de uma modalidade de garantia (Art. 37, parágrafo único)",
+        "severity": "high",
+        "criteria": (
+            "Identificar as garantias exigidas: caução, fiança, seguro-fiança, cessão fiduciária. "
+            "Gerar alerta se mais de uma modalidade for exigida simultaneamente."
+        ),
+        "is_active": False,
+        "category": "locacao",
+    },
+    {
+        "name": "Locação: reajuste em periodicidade inferior a um ano",
+        "description": "Reajuste anual e revisão só por acordo ou ação revisional (Arts. 18 e 19)",
+        "severity": "medium",
+        "criteria": (
+            "Verificar a periodicidade do reajuste do aluguel. Gerar alerta se for inferior a 12 "
+            "meses, se o índice puder ser escolhido unilateralmente pelo locador, ou se houver "
+            "previsão de revisão a qualquer tempo sem acordo nem ação judicial."
+        ),
+        "is_active": False,
+        "category": "locacao",
+    },
+    {
+        "name": "Locação: multa rescisória sem proporcionalidade",
+        "description": "A multa por devolução antecipada é proporcional ao cumprimento (Art. 4º)",
+        "severity": "medium",
+        "criteria": (
+            "Verificar a multa por rescisão antecipada pelo locatário. Gerar alerta se não houver "
+            "redução proporcional ao período já cumprido, ou se a base de cálculo for o somatório "
+            "integral dos aluguéis vincendos."
+        ),
+        "is_active": False,
+        "category": "locacao",
+    },
+
+    # ─── Societário, Lei 6.404/1976 e Código Civil ──────────────────────────
+    {
+        "name": "Societário: restrição ao direito de retirada",
+        "description": "O recesso com reembolso é direito essencial do sócio (Art. 137 da LSA)",
+        "severity": "high",
+        "criteria": (
+            "Verificar se o instrumento restringe, condiciona ou renuncia ao direito de retirada e "
+            "ao reembolso nas hipóteses legais. Gerar alerta ao encontrar renúncia antecipada ou "
+            "critério de reembolso manifestamente inferior ao valor patrimonial."
+        ),
+        "is_active": False,
+        "category": "societario",
+    },
+    {
+        "name": "Societário: ausência de tag along",
+        "description": "Alienação de controle exige oferta aos minoritários (Art. 254-A da LSA)",
+        "severity": "medium",
+        "criteria": (
+            "Em contrato que trate de transferência de controle ou de participação relevante, "
+            "verificar previsão de oferta pública aos minoritários. Gerar alerta se a alienação "
+            "puder ocorrer sem qualquer direito de acompanhamento."
+        ),
+        "is_active": False,
+        "category": "societario",
+    },
+    {
+        "name": "Societário: deliberação sem quórum definido",
+        "description": "Quórum das deliberações sociais (Arts. 1.071 e 1.076 do Código Civil)",
+        "severity": "medium",
+        "criteria": (
+            "Verificar se as matérias de deliberação têm quórum definido, em especial alteração "
+            "contratual, exclusão de sócio, dissolução e alienação de ativos. Gerar alerta quando "
+            "o quórum for omisso ou concentrar a decisão em um único sócio."
+        ),
+        "is_active": False,
+        "category": "societario",
+    },
+
+    # ─── Propriedade industrial, Lei 9.279/1996 ─────────────────────────────
+    {
+        "name": "PI: titularidade de criações não definida",
+        "description": "Invenções e criações no contrato de trabalho ou serviço (Arts. 88 a 93)",
+        "severity": "high",
+        "criteria": (
+            "Se o contrato envolve desenvolvimento, pesquisa ou criação, verificar se a "
+            "titularidade dos resultados está definida. Gerar alerta quando for omissa, ou quando "
+            "atribuir ao contratante criações alheias ao objeto contratado."
+        ),
+        "is_active": False,
+        "category": "propriedade_industrial",
+    },
+    {
+        "name": "PI: cessão ou licença sem averbação no INPI",
+        "description": "A averbação produz efeitos perante terceiros (Arts. 62, 136 e 140)",
+        "severity": "medium",
+        "criteria": (
+            "Em cessão ou licenciamento de marca, patente ou desenho industrial, verificar "
+            "previsão de averbação no INPI. Gerar alerta se ausente, indicando o risco de "
+            "ineficácia perante terceiros e para remessa de royalties."
+        ),
+        "is_active": False,
+        "category": "propriedade_industrial",
+    },
+    {
+        "name": "PI: ausência de proteção a segredo industrial",
+        "description": "Concorrência desleal e informação confidencial (Art. 195)",
+        "severity": "medium",
+        "criteria": (
+            "Se há acesso a informação técnica, código-fonte, fórmula ou método de negócio, "
+            "verificar cláusula de sigilo com prazo de sobrevivência após o término. Gerar alerta "
+            "se o sigilo cessar junto com o contrato ou não existir."
+        ),
+        "is_active": False,
+        "category": "propriedade_industrial",
+    },
+
 ]
 
 

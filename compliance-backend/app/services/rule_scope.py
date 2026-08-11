@@ -74,6 +74,7 @@ def apply_overrides(
                 "description": rule.description,
                 "severity": rule.severity,
                 "criteria": rule.criteria,
+                "category": rule.category or "geral",
                 "is_active": by_rule.get(rule.id, rule.is_active),
                 "created_at": rule.created_at,
                 "scope": rule.scope,

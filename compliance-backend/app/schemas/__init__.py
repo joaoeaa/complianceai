@@ -64,11 +64,18 @@ class RuleCreate(BaseModel):
     description: Optional[str] = None
     severity: Severity = Severity.medium
     criteria: str = Field(..., min_length=1)
+    category: str = "geral"
     # Preenchido para criar uma regra de equipe; omitido cria uma regra pessoal.
     organization_id: Optional[UUID] = None
 
+class RuleCategoryToggle(BaseModel):
+    """Liga ou desliga uma área inteira de uma vez."""
+    is_active: bool
+
+
 class RuleUpdate(BaseModel):
     name: Optional[str] = None
+    category: Optional[str] = None
     description: Optional[str] = None
     severity: Optional[Severity] = None
     criteria: Optional[str] = None
@@ -85,6 +92,7 @@ class RuleResponse(BaseModel):
     created_at: datetime
     scope: str = "global"       # global | user | organization
     editable: bool = True       # regras globais nao podem ser editadas por quem as consome
+    category: str = "geral"     # area do direito
 
 
 # --- Documents ---

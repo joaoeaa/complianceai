@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Shield, Upload, FileText, AlertTriangle, CheckCircle, XCircle,
   Clock, TrendingUp, Settings, BarChart3, ChevronRight, Search,
@@ -232,6 +232,14 @@ class ApiClient {
 
   async deleteRule(id) {
     return this.request(`/rules/${id}`, { method: "DELETE" });
+  }
+
+  async toggleCategory(category, isActive, organizationId = null) {
+    const qs = organizationId ? `?organization_id=${organizationId}` : "";
+    return this.request(`/rules/categoria/${encodeURIComponent(category)}${qs}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: isActive }),
+    });
   }
 
   async toggleRule(id, organizationId = null) {
@@ -1502,6 +1510,13 @@ const CATEGORY_META = {
   "internet": { label: "Internet", color: "#2563eb", bg: "#eff6ff", icon: Zap },
   "anticorrupção": { label: "Anticorrupção", color: "#dc2626", bg: "#fef2f2", icon: AlertTriangle },
   "licitações": { label: "Licitações", color: "#059669", bg: "#ecfdf5", icon: BarChart3 },
+  // As leis ingeridas do Planalto gravam a categoria sem acento.
+  "protecao_de_dados": { label: "Proteção de Dados", color: "#6366f1", bg: "#eef2ff", icon: Lock },
+  "anticorrupcao": { label: "Anticorrupção", color: "#dc2626", bg: "#fef2f2", icon: AlertTriangle },
+  "licitacoes": { label: "Licitações", color: "#059669", bg: "#ecfdf5", icon: BarChart3 },
+  "locacao": { label: "Locação", color: "#b45309", bg: "#fffbeb", icon: FileText },
+  "societario": { label: "Societário", color: "#0f766e", bg: "#f0fdfa", icon: BarChart3 },
+  "propriedade_industrial": { label: "Propriedade Industrial", color: "#9333ea", bg: "#faf5ff", icon: Shield },
 };
 const getCatMeta = (cat) => CATEGORY_META[cat] || { label: cat || "Geral", color: "#64748b", bg: "#f8fafc", icon: FileText };
 
@@ -1771,12 +1786,35 @@ const RulesIntro = ({ globalCount, ownCount, isTeam, onDismiss }) => (
   </div>
 );
 
+// Areas do direito. A ordem aqui e a ordem na tela: primeiro o que vale para
+// qualquer contrato, depois os conjuntos que so ligam quando o contrato e daquele
+// tipo.
+const AREA_META = {
+  geral: { label: "Estrutura do contrato", hint: "Valem para qualquer contrato" },
+  protecao_de_dados: { label: "Proteção de dados", hint: "LGPD, Lei 13.709/2018" },
+  civil: { label: "Civil", hint: "Código Civil, Lei 10.406/2002" },
+  trabalhista: { label: "Trabalhista", hint: "CLT, Decreto-Lei 5.452/1943" },
+  consumidor: { label: "Consumidor", hint: "CDC, Lei 8.078/1990" },
+  anticorrupcao: { label: "Anticorrupção", hint: "Lei 12.846/2013" },
+  internet: { label: "Internet", hint: "Marco Civil, Lei 12.965/2014" },
+  licitacoes: { label: "Licitações", hint: "Lei 14.133/2021" },
+  locacao: { label: "Locação", hint: "Lei do Inquilinato, Lei 8.245/1991" },
+  societario: { label: "Societário", hint: "Lei das S.A., Lei 6.404/1976" },
+  propriedade_industrial: { label: "Propriedade industrial", hint: "Lei 9.279/1996" },
+};
+
+const AREA_ORDER = Object.keys(AREA_META);
+
+const areaLabel = (c) => AREA_META[c]?.label || "Outras";
+
 const RulesManager = ({ showToast, organizationId = null, canManage = true, embedded = false }) => {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [fd, setFd] = useState({ name: "", description: "", severity: "medium", criteria: "" });
+  const [fd, setFd] = useState({ name: "", description: "", severity: "medium", criteria: "", category: "geral" });
+  const [areasFechadas, setAreasFechadas] = useState({});
+  const [areaSalvando, setAreaSalvando] = useState(null);
   const [delC, setDelC] = useState(null);
   const [saving, setSaving] = useState(false);
   const [introDismissed, setIntroDismissed] = useState(
@@ -1801,8 +1839,8 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
-  const openNew = () => { setFd({ name: "", description: "", severity: "medium", criteria: "" }); setEditId(null); setShowForm(true); };
-  const openEdit = (r) => { setFd({ name: r.name, description: r.description || "", severity: r.severity, criteria: r.criteria }); setEditId(r.id); setShowForm(true); };
+  const openNew = () => { setFd({ name: "", description: "", severity: "medium", criteria: "", category: "geral" }); setEditId(null); setShowForm(true); };
+  const openEdit = (r) => { setFd({ name: r.name, description: r.description || "", severity: r.severity, criteria: r.criteria, category: r.category || "geral" }); setEditId(r.id); setShowForm(true); };
 
   const save = async () => {
     if (!fd.name || !fd.criteria) { showToast("Nome e critério são obrigatórios", "error"); return; }
@@ -1823,6 +1861,39 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
       showToast(err.message, "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Agrupa por area e ordena pela ordem de AREA_META, deixando areas
+  // desconhecidas no fim em vez de as esconder.
+  const grupos = useMemo(() => {
+    const mapa = new Map();
+    for (const regra of rules) {
+      const cat = regra.category || "geral";
+      if (!mapa.has(cat)) mapa.set(cat, []);
+      mapa.get(cat).push(regra);
+    }
+    return [...mapa.entries()].sort((a, b) => {
+      const ia = AREA_ORDER.indexOf(a[0]);
+      const ib = AREA_ORDER.indexOf(b[0]);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+  }, [rules]);
+
+  const toggleArea = async (categoria, ativar) => {
+    setAreaSalvando(categoria);
+    try {
+      const atualizadas = await api.toggleCategory(categoria, ativar, organizationId);
+      const porId = new Map(atualizadas.map(r => [r.id, r]));
+      setRules(rules.map(r => porId.get(r.id) || r));
+      showToast(
+        `${areaLabel(categoria)}: ${atualizadas.length} ${atualizadas.length === 1 ? "regra" : "regras"} ${ativar ? "ativadas" : "desativadas"}`,
+        "success",
+      );
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setAreaSalvando(null);
     }
   };
 
@@ -1881,13 +1952,35 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Nome *</label><input value={fd.name} onChange={e => setFd({...fd, name: e.target.value})} placeholder="Ex: Foro em Pernambuco" style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", boxSizing: "border-box" }} /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Severidade *</label><select value={fd.severity} onChange={e => setFd({...fd, severity: e.target.value})} style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", background: "white", boxSizing: "border-box" }}><option value="high">Alta</option><option value="medium">Média</option><option value="low">Baixa</option></select></div>
           </div>
+          <div style={{ marginBottom: 12 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Área do direito</label><select value={fd.category} onChange={e => setFd({...fd, category: e.target.value})} style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", background: "white", boxSizing: "border-box" }}>{AREA_ORDER.map(c => <option key={c} value={c}>{AREA_META[c].label}</option>)}</select></div>
           <div style={{ marginBottom: 12 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Descrição</label><input value={fd.description} onChange={e => setFd({...fd, description: e.target.value})} placeholder="Descrição breve" style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", boxSizing: "border-box" }} /></div>
           <div style={{ marginBottom: 16 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4, fontFamily: F }}>Critério de Verificação *</label><textarea value={fd.criteria} onChange={e => setFd({...fd, criteria: e.target.value})} rows={3} placeholder="Descreva o que a IA deve verificar..." style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 12, fontFamily: F, outline: "none", resize: "vertical", boxSizing: "border-box" }} /></div>
           <button onClick={save} disabled={saving} style={{ padding: "9px 20px", borderRadius: 9, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontWeight: 600, fontSize: 12, fontFamily: F, opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>{saving && <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />}{editId ? "Salvar Alterações" : "Criar Regra"}</button>
         </div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {rules.map((rule, i) => { const sev = getSeverityStyle(rule.severity); return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {grupos.map(([categoria, doGrupo]) => {
+        const ativasNaArea = doGrupo.filter(r => r.is_active).length;
+        const fechada = !!areasFechadas[categoria];
+        const meta = AREA_META[categoria];
+        return (
+        <div key={categoria}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px 8px", borderBottom: "1px solid #e2e8f0", marginBottom: 10 }}>
+            <button onClick={() => setAreasFechadas({ ...areasFechadas, [categoria]: !fechada })} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: 0, flex: 1, minWidth: 0, textAlign: "left" }}>
+              {fechada ? <ChevronRight size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{areaLabel(categoria)}</span>
+              {meta && <span style={{ fontSize: 10, color: "#94a3b8", fontFamily: F }}>{meta.hint}</span>}
+              <span style={{ fontSize: 10, fontWeight: 600, color: ativasNaArea ? "#6366f1" : "#94a3b8", background: ativasNaArea ? "#eef2ff" : "#f1f5f9", padding: "2px 8px", borderRadius: 20, fontFamily: F }}>{ativasNaArea} de {doGrupo.length}</span>
+            </button>
+            {canManage && (
+              <button onClick={() => toggleArea(categoria, ativasNaArea < doGrupo.length)} disabled={areaSalvando === categoria} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: "#6366f1", fontFamily: F, padding: "2px 4px", flexShrink: 0, opacity: areaSalvando === categoria ? 0.5 : 1 }} title={ativasNaArea < doGrupo.length ? "Ativar todas as regras desta área" : "Desativar todas as regras desta área"}>
+                {ativasNaArea < doGrupo.length ? "Ativar área" : "Desativar área"}
+              </button>
+            )}
+          </div>
+          {!fechada && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {doGrupo.map((rule, i) => { const sev = getSeverityStyle(rule.severity); return (
           <div key={rule.id} style={{ background: "white", borderRadius: 11, border: "1px solid #e2e8f0", padding: "16px 18px", opacity: rule.is_active ? 1 : 0.55, transition: "all 0.3s", animation: `fadeSlideUp 0.4s ease ${i*0.05}s both` }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
@@ -1910,6 +2003,11 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
             <div style={{ marginTop: 8, padding: "7px 10px", background: "#f8fafc", borderRadius: 5 }}><div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", marginBottom: 2, fontFamily: F }}>Critério:</div><div style={{ fontSize: 11, color: "#475569", fontFamily: F }}>{rule.criteria}</div></div>
           </div>
         ); })}
+          </div>
+          )}
+        </div>
+        );
+        })}
       </div>
       <Modal open={!!delC} onClose={() => setDelC(null)} title="Excluir regra" width={380}>
         <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 16px", fontFamily: F }}>Tem certeza? A regra será removida permanentemente.</p>
