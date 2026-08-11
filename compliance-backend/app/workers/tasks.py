@@ -189,6 +189,25 @@ def analyze_document_task(self, document_id: str):
             )
             logger.info(f"Análise concluída: score={result.risk_score}, alertas={len(result.alerts)}")
 
+            # 4.5 Verifica o que o modelo afirmou. O trecho citado tem que existir no
+            # contrato e o artigo citado tem que estar entre os recuperados pelo RAG.
+            # Quem revisa precisa saber onde confiar e onde conferir na fonte.
+            from app.services.verification import annotate_alerts, verification_summary
+
+            verified_alerts = annotate_alerts(result.alerts, extracted_text, legal_context)
+            resumo = verification_summary(verified_alerts)
+            logger.info(
+                "Verificação: %d/%d trechos localizados no contrato, "
+                "%d/%d citações apoiadas na base legal",
+                resumo["excerpt_exact"], resumo["total"],
+                resumo["legal_grounded"], resumo["total"],
+            )
+            if resumo["excerpt_unverified"] or resumo["legal_ungrounded"]:
+                logger.warning(
+                    "Alertas a conferir: %d com trecho não localizado, %d sem respaldo legal",
+                    resumo["excerpt_unverified"], resumo["legal_ungrounded"],
+                )
+
             # 5. Save analysis
             self.update_state(state="PROGRESS", meta={"stage": "saving", "progress": 90})
 
@@ -204,7 +223,7 @@ def analyze_document_task(self, document_id: str):
                 document_id=doc.id,
                 risk_score=result.risk_score,
                 summary=result.summary,
-                alerts=result.alerts,
+                alerts=verified_alerts,
                 missing_clauses=result.missing_clauses,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,

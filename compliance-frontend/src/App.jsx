@@ -1136,7 +1136,10 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                   {/* Excerpt */}
                   {alert.excerpt && alert.excerpt !== "—" && (
                     <div style={{ background: "#fffbeb", borderRadius: 10, padding: "12px 16px", marginBottom: 12, border: "1px solid #fef3c7" }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, fontFamily: F }}>Trecho do Documento</div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Trecho do Documento</div>
+                        <CheckBadge meta={EXCERPT_CHECK[alert.excerpt_check]} />
+                      </div>
                       <div style={{ fontSize: 12, color: "#78350f", fontStyle: "italic", lineHeight: 1.6, fontFamily: F }}>"{alert.excerpt}"</div>
                     </div>
                   )}
@@ -1144,9 +1147,12 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                   {/* Legal Basis — prominent card */}
                   {alert.legal_basis && (
                     <div style={{ background: "linear-gradient(135deg, #eef2ff, #e8e0ff)", borderRadius: 10, padding: "14px 16px", marginBottom: 12, border: "1px solid #c7d2fe" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                        <Scale size={13} color="#6366f1" />
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#4338ca", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Fundamentação Legal</span>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <Scale size={13} color="#6366f1" />
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#4338ca", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Fundamentação Legal</span>
+                        </div>
+                        <CheckBadge meta={LEGAL_CHECK[alert.legal_basis_check]} />
                       </div>
                       <div style={{ fontSize: 12, color: "#312e81", lineHeight: 1.6, fontWeight: 500, fontFamily: F }}>{alert.legal_basis}</div>
                     </div>
@@ -1565,6 +1571,32 @@ const LegislationPage = ({ showToast }) => {
 
 // ── Rules ──
 // Origem da regra: padrão do sistema, própria do usuário ou da equipe.
+// Resultado da conferencia que o backend faz de cada alerta. O objetivo e dizer
+// ao leitor onde ele pode confiar e onde precisa abrir a fonte, nao esconder nada.
+const EXCERPT_CHECK = {
+  exact:       { label: "Trecho conferido",     color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0",
+                 hint: "Este trecho foi localizado no documento enviado." },
+  approximate: { label: "Trecho aproximado",    color: "#b45309", bg: "#fffbeb", border: "#fde68a",
+                 hint: "Parecido com uma passagem do documento, mas não idêntico. Confira no original." },
+  not_found:   { label: "Trecho não localizado", color: "#b91c1c", bg: "#fef2f2", border: "#fecaca",
+                 hint: "Não encontramos esta passagem no documento. Confira antes de usar." },
+};
+
+const LEGAL_CHECK = {
+  grounded:    { label: "Artigo conferido",  color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0",
+                 hint: "O artigo citado está na base legal consultada nesta análise." },
+  law_only:    { label: "Artigo a conferir", color: "#b45309", bg: "#fffbeb", border: "#fde68a",
+                 hint: "A lei confere, mas este artigo não veio na consulta. Confira o dispositivo." },
+  ungrounded:  { label: "Citação sem respaldo", color: "#b91c1c", bg: "#fef2f2", border: "#fecaca",
+                 hint: "Nada na base legal consultada sustenta esta citação. Confira antes de usar." },
+};
+
+const CheckBadge = ({ meta }) => meta ? (
+  <span title={meta.hint} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, padding: "2px 8px", borderRadius: 20, fontFamily: F, cursor: "help" }}>
+    {meta.label}
+  </span>
+) : null;
+
 const SCOPE_META = {
   global: { label: "Padrão", color: "#64748b", bg: "#f1f5f9", border: "#e2e8f0", hint: "Regra padrão do sistema. Você pode desativá-la para você, mas não editá-la." },
   user: { label: "Minha", color: "#6366f1", bg: "#eef2ff", border: "#c7d2fe", hint: "Regra sua, válida apenas na sua conta." },
@@ -1572,6 +1604,42 @@ const SCOPE_META = {
 };
 
 // CRUD de regras. Sem `organizationId` opera no escopo pessoal; com ele, no da equipe.
+// Explica o modelo de regras a quem chega pela primeira vez. O ponto principal e
+// tranquilizador: nada precisa ser configurado para analisar o primeiro contrato.
+const RulesIntro = ({ globalCount, ownCount, isTeam, onDismiss }) => (
+  <div style={{ background: "linear-gradient(135deg, #eef2ff, #faf5ff)", border: "1px solid #ddd6fe", borderRadius: 13, padding: "18px 20px", marginBottom: 18, position: "relative", animation: "fadeSlideUp 0.4s ease" }}>
+    <button onClick={onDismiss} title="Não mostrar novamente" style={{ position: "absolute", top: 12, right: 12, width: 24, height: 24, borderRadius: 6, border: "none", background: "rgba(255,255,255,0.7)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <X size={13} color="#6b7280" />
+    </button>
+
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+      <Info size={16} color="#6366f1" />
+      <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", margin: 0, fontFamily: F }}>Como funcionam as regras</h3>
+    </div>
+
+    <p style={{ fontSize: 12.5, color: "#475569", margin: "0 0 13px", fontFamily: F, lineHeight: 1.6, maxWidth: 620 }}>
+      {globalCount > 0
+        ? <>Você já tem <strong>{globalCount} regras padrão</strong> ativas, cobrindo LGPD, CDC, Código Civil, CLT e mais. Não precisa configurar nada para analisar seu primeiro contrato: ajuste só se quiser algo diferente do padrão.</>
+        : <>As regras definem o que a IA verifica em cada contrato. Crie a primeira para começar.</>}
+    </p>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: SCOPE_META.global.color, background: "white", padding: "2px 8px", borderRadius: 20, border: `1px solid ${SCOPE_META.global.border}`, fontFamily: F, flexShrink: 0, marginTop: 1 }}>Padrão</span>
+        <span style={{ fontSize: 12, color: "#475569", fontFamily: F, lineHeight: 1.5 }}>Vêm com o sistema e não podem ser editadas. Se alguma não se aplica ao seu caso, desative-a: vale só para {isTeam ? "esta equipe" : "você"}.</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: isTeam ? SCOPE_META.organization.color : SCOPE_META.user.color, background: "white", padding: "2px 8px", borderRadius: 20, border: `1px solid ${isTeam ? SCOPE_META.organization.border : SCOPE_META.user.border}`, fontFamily: F, flexShrink: 0, marginTop: 1 }}>{isTeam ? "Equipe" : "Minha"}</span>
+        <span style={{ fontSize: 12, color: "#475569", fontFamily: F, lineHeight: 1.5 }}>
+          {isTeam
+            ? "Criadas aqui e compartilhadas com todos os membros da equipe."
+            : <>Suas próprias regras{ownCount > 0 ? <> (você já tem {ownCount})</> : null}. Use para exigências específicas do seu contexto, como um prazo de pagamento mais rígido.</>}
+        </span>
+      </div>
+    </div>
+  </div>
+);
+
 const RulesManager = ({ showToast, organizationId = null, canManage = true, embedded = false }) => {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1580,6 +1648,14 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
   const [fd, setFd] = useState({ name: "", description: "", severity: "medium", criteria: "" });
   const [delC, setDelC] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [introDismissed, setIntroDismissed] = useState(
+    () => localStorage.getItem("rules_intro_dismissed") === "1"
+  );
+
+  const dismissIntro = () => {
+    localStorage.setItem("rules_intro_dismissed", "1");
+    setIntroDismissed(true);
+  };
 
   const fetchRules = useCallback(async () => {
     try {
@@ -1659,6 +1735,14 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
           <button onClick={() => showForm ? setShowForm(false) : openNew()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 12, background: showForm ? "#f1f5f9" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: showForm ? "#64748b" : "white", fontFamily: F }}>{showForm ? <><X size={15} /> Cancelar</> : <><Plus size={15} /> Nova Regra</>}</button>
         )}
       </div>
+      {!introDismissed && !showForm && (
+        <RulesIntro
+          globalCount={rules.filter(r => r.scope === "global").length}
+          ownCount={rules.filter(r => r.scope !== "global").length}
+          isTeam={!!organizationId}
+          onDismiss={dismissIntro}
+        />
+      )}
       {showForm && (
         <div style={{ background: "white", borderRadius: 13, border: "1px solid #e2e8f0", padding: "22px", marginBottom: 18, animation: "fadeSlideUp 0.3s ease" }}>
           <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", margin: "0 0 16px", fontFamily: F }}>{editId ? "Editar Regra" : "Criar Nova Regra"}</h3>
