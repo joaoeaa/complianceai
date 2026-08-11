@@ -22,7 +22,7 @@ from app.models import User, Document, Analysis, Rule
 from app.schemas import (
     DocumentResponse, DocumentListResponse,
     AnalysisResponse, ReportResponse, RuleResponse,
-    AnalysisStatusResponse,
+    AnalysisStatusResponse, AlertResolutionUpdate,
 )
 from app.services.document_extractor import get_mime_type, extract_text
 from app.services.scope import (
@@ -248,10 +248,30 @@ async def get_report(
     # Regras do escopo do documento, nao da tabela inteira
     rules = await _rules_for_document(doc, db)
 
+    # Traz o que este revisor ja marcou, para a tela abrir onde ele parou.
+    from app.models import AlertFeedback
+
+    marcacoes = (
+        await db.execute(
+            select(AlertFeedback).where(
+                AlertFeedback.analysis_id == analysis.id,
+                AlertFeedback.user_id == current_user.id,
+            )
+        )
+    ).scalars().all()
+    por_indice = {m.alert_index: m for m in marcacoes}
+
+    resposta = AnalysisResponse.model_validate(analysis)
+    for i, alerta in enumerate(resposta.alerts):
+        marcacao = por_indice.get(i)
+        if marcacao:
+            alerta.resolution = marcacao.resolution
+            alerta.resolution_comment = marcacao.comment
+
     doc.analysis = analysis
     return ReportResponse(
         document=_doc_to_response(doc),
-        analysis=AnalysisResponse.model_validate(analysis),
+        analysis=resposta,
         rules_checked=[RuleResponse.model_validate(r) for r in rules],
     )
 
@@ -327,6 +347,66 @@ async def download_report_html(
 
     html = generate_html_report(doc_data, analysis_data, rules)
     return HTMLResponse(content=html)
+
+
+@router.patch("/{document_id}/alerts/{alert_index}", response_model=AlertResolutionUpdate)
+async def set_alert_resolution(
+    document_id: uuid.UUID,
+    alert_index: int,
+    body: AlertResolutionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Marca o que o revisor decidiu sobre um alerta.
+
+    E a trilha de revisao humana: percorrer 16 alertas sem poder anotar o que ja
+    foi tratado obriga a recomecar do zero a cada sessao. Enviar `resolution: null`
+    limpa a marcacao.
+    """
+    from app.models import AlertFeedback
+
+    doc = await get_document_for_read(document_id, current_user, db)
+
+    analysis = (
+        await db.execute(select(Analysis).where(Analysis.document_id == doc.id))
+    ).scalar_one_or_none()
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Análise não encontrada para este documento")
+
+    alertas = analysis.alerts or []
+    if not 0 <= alert_index < len(alertas):
+        raise HTTPException(status_code=404, detail="Alerta não encontrado nesta análise")
+
+    existente = (
+        await db.execute(
+            select(AlertFeedback).where(
+                AlertFeedback.analysis_id == analysis.id,
+                AlertFeedback.alert_index == alert_index,
+                AlertFeedback.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    valor = body.resolution.value if body.resolution else None
+
+    if existente:
+        existente.resolution = valor
+        if body.comment is not None:
+            existente.comment = body.comment
+    else:
+        alerta = alertas[alert_index]
+        db.add(AlertFeedback(
+            analysis_id=analysis.id,
+            user_id=current_user.id,
+            alert_index=alert_index,
+            rule_name=alerta.get("rule_name", ""),
+            severity=alerta.get("severity"),
+            resolution=valor,
+            comment=body.comment,
+        ))
+
+    await db.flush()
+    return body
 
 
 @router.get("/{document_id}/download")

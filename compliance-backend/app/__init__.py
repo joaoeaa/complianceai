@@ -359,7 +359,16 @@ class AlertFeedback(Base):
     alert_index = Column(Integer, nullable=False)       # index of the alert in analysis.alerts[]
     rule_name = Column(String(255), nullable=False)      # duplicated for easy querying
     severity = Column(String(20), nullable=True)
-    is_correct = Column(Boolean, nullable=False)         # True = "IA acertou", False = "falso positivo"
+    # Duas coisas diferentes convivem aqui, de proposito:
+    #   is_correct  a IA acertou? Alimenta o learning loop do prompt.
+    #   resolution  o que o revisor decidiu fazer? E fluxo de trabalho humano.
+    # Quem so quer marcar o alerta como tratado nao precisa avaliar a IA, por isso
+    # is_correct e opcional.
+    is_correct = Column(Boolean, nullable=True)          # True = "IA acertou", False = "falso positivo"
+    resolution = Column(
+        Enum("to_fix", "not_applicable", "resolved", name="alert_resolution"),
+        nullable=True,
+    )
     comment = Column(Text, nullable=True)                # user explanation
     created_at = Column(DateTime(timezone=True), default=utcnow)
 

@@ -107,6 +107,18 @@ class DocumentListResponse(BaseModel):
 
 # --- Analysis / Alerts ---
 
+class AlertResolution(str, Enum):
+    """O que o revisor decidiu sobre o alerta."""
+    to_fix = "to_fix"                  # precisa ser corrigido no contrato
+    not_applicable = "not_applicable"  # nao se aplica a este caso
+    resolved = "resolved"              # ja tratado
+
+
+class AlertResolutionUpdate(BaseModel):
+    resolution: Optional[AlertResolution] = None  # null limpa a marcacao
+    comment: Optional[str] = None
+
+
 class LegalSourceSchema(BaseModel):
     """Dispositivo legal citado, com o texto da lei, quando o RAG o recuperou."""
     source: str
@@ -124,8 +136,12 @@ class AlertSchema(BaseModel):
     # Resultado da conferência feita em código. Análises antigas não têm estes
     # campos e simplesmente não exibem selo.
     excerpt_check: Optional[str] = None       # exact | approximate | not_found | empty
+    excerpt_page: Optional[int] = None        # pagina onde o trecho foi localizado
     legal_basis_check: Optional[str] = None   # grounded | law_only | ungrounded | empty | no_context
     legal_source: Optional[LegalSourceSchema] = None
+    # Preenchido pelo endpoint de relatorio a partir do feedback do revisor.
+    resolution: Optional[str] = None
+    resolution_comment: Optional[str] = None
 
 class AnalysisResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

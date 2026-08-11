@@ -49,42 +49,88 @@ def _strip_quotes(text: str) -> str:
     return text.strip().strip('"“”\'').strip()
 
 
-def verify_excerpt(excerpt: Optional[str], document_text: str) -> str:
-    """Confere se o trecho citado existe no contrato.
+def _page_index(document_text: str) -> list[tuple[int, int]]:
+    """Posições onde cada página começa, no texto normalizado.
 
-    Devolve:
+    Devolve pares (posição, número da página). O extrator marca cada página com
+    "--- Página N ---", e a normalização preserva a ordem dos caracteres restantes,
+    então a contagem feita aqui vale para o texto normalizado.
+    """
+    paginas: list[tuple[int, int]] = []
+    posicao_norm = 0
+    ultimo_fim = 0
+    for marcador in _PAGE_MARKER.finditer(document_text):
+        trecho = document_text[ultimo_fim:marcador.start()]
+        posicao_norm += len(_normalize(trecho))
+        numero = re.search(r"\d+", marcador.group(0))
+        if numero:
+            paginas.append((posicao_norm, int(numero.group(0))))
+        ultimo_fim = marcador.end()
+    return paginas
+
+
+def _page_at(posicao: int, paginas: list[tuple[int, int]]) -> Optional[int]:
+    """Página que contém a posição informada."""
+    atual = None
+    for inicio, numero in paginas:
+        if inicio <= posicao:
+            atual = numero
+        else:
+            break
+    return atual
+
+
+def locate_excerpt(
+    excerpt: Optional[str], document_text: str
+) -> tuple[str, Optional[int]]:
+    """Confere se o trecho existe no contrato e em que página está.
+
+    Status possíveis:
         "exact"        o trecho aparece no documento
         "approximate"  há passagem muito parecida (provável paráfrase)
         "not_found"    nada semelhante foi localizado
         "empty"        não houve citação (cláusula ausente, por exemplo)
+
+    A página vem junto porque localizar o trecho no contrato é metade do trabalho
+    de quem revisa: sem ela, o alerta obriga a reler o documento inteiro.
     """
     if not excerpt or not document_text:
-        return "empty"
+        return "empty", None
 
     cleaned = _strip_quotes(excerpt)
     # O prompt usa travessão ou hífen para indicar "cláusula ausente".
     if not cleaned or cleaned in {"-", "—", "--", "N/A", "n/a"}:
-        return "empty"
+        return "empty", None
 
     needle = _normalize(cleaned)
     haystack = _normalize(document_text)
 
     if not needle:
-        return "empty"
-    if needle in haystack:
-        return "exact"
+        return "empty", None
+
+    paginas = _page_index(document_text)
+
+    posicao = haystack.find(needle)
+    if posicao >= 0:
+        return "exact", _page_at(posicao, paginas)
 
     # Trechos muito curtos casam por acaso; não vale medir similaridade neles.
     if len(needle) < 25:
-        return "not_found"
+        return "not_found", None
 
     # Procura a janela mais parecida, do tamanho do trecho citado.
     matcher = SequenceMatcher(None, needle, haystack, autojunk=False)
     match = matcher.find_longest_match(0, len(needle), 0, len(haystack))
     if match.size and match.size / len(needle) >= _APPROXIMATE_THRESHOLD:
-        return "approximate"
+        return "approximate", _page_at(match.b, paginas)
 
-    return "not_found"
+    return "not_found", None
+
+
+def verify_excerpt(excerpt: Optional[str], document_text: str) -> str:
+    """Só o status da conferência. Use `locate_excerpt` para obter a página junto."""
+    status, _ = locate_excerpt(excerpt, document_text)
+    return status
 
 
 def _article_numbers(text: str) -> set[str]:
@@ -200,10 +246,12 @@ def annotate_alerts(
     context = list(legal_context or [])
     annotated = []
     for alert in alerts:
+        status, pagina = locate_excerpt(alert.get("excerpt"), document_text)
         annotated.append(
             {
                 **alert,
-                "excerpt_check": verify_excerpt(alert.get("excerpt"), document_text),
+                "excerpt_check": status,
+                "excerpt_page": pagina,
                 "legal_basis_check": verify_legal_basis(
                     alert.get("legal_basis"), context
                 ),

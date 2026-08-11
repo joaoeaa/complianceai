@@ -144,6 +144,13 @@ class ApiClient {
   async deleteDocument(id) {
     return this.request(`/documents/${id}`, { method: "DELETE" });
   }
+  async setAlertResolution(docId, alertIndex, resolution, comment) {
+    return this.request(`/documents/${docId}/alerts/${alertIndex}`, {
+      method: "PATCH",
+      body: JSON.stringify({ resolution, comment }),
+    });
+  }
+
   async downloadOriginal(docId) {
     return this._downloadFile(`${API_BASE}/documents/${docId}/download`, "documento");
   }
@@ -884,7 +891,23 @@ const ReportPage = ({ docId, onBack, showToast }) => {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [downloadingOriginal, setDownloadingOriginal] = useState(false);
+  const [resolutions, setResolutions] = useState({});
+  const [savingResolution, setSavingResolution] = useState(null);
   const [existingFeedback, setExistingFeedback] = useState(false);
+
+  const changeResolution = async (index, resolution) => {
+    const anterior = resolutions[index] ?? null;
+    setResolutions(r => ({ ...r, [index]: resolution }));  // otimista
+    setSavingResolution(index);
+    try {
+      await api.setAlertResolution(docId, index, resolution);
+    } catch (err) {
+      setResolutions(r => ({ ...r, [index]: anterior }));  // desfaz
+      showToast(err.message || "Não foi possível salvar a marcação", "error");
+    } finally {
+      setSavingResolution(null);
+    }
+  };
 
   const downloadOriginal = async () => {
     setDownloadingOriginal(true);
@@ -917,6 +940,12 @@ const ReportPage = ({ docId, onBack, showToast }) => {
     setLoading(true);
     api.getReport(docId).then(data => {
       setReport(data);
+      // O relatorio ja traz a marcacao deste revisor em cada alerta.
+      const marcadas = {};
+      (data?.analysis?.alerts || []).forEach((a, i) => {
+        if (a.resolution) marcadas[i] = a.resolution;
+      });
+      setResolutions(marcadas);
       // Load existing feedback if any
       if (data?.analysis?.id) {
         api.getAlertFeedback(data.analysis.id).then(fbs => {
@@ -1169,7 +1198,14 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                   {alert.excerpt && alert.excerpt !== "—" && (
                     <div style={{ background: "#fffbeb", borderRadius: 10, padding: "12px 16px", marginBottom: 12, border: "1px solid #fef3c7" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Trecho do Documento</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Trecho do Documento</div>
+                          {alert.excerpt_page && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: "#92400e", background: "rgba(255,255,255,0.7)", border: "1px solid #fde68a", padding: "1px 7px", borderRadius: 20, fontFamily: F }}>
+                              Página {alert.excerpt_page}
+                            </span>
+                          )}
+                        </div>
                         <CheckBadge meta={EXCERPT_CHECK[alert.excerpt_check]} />
                       </div>
                       <div style={{ fontSize: 12, color: "#78350f", fontStyle: "italic", lineHeight: 1.6, fontFamily: F }}>"{alert.excerpt}"</div>
@@ -1214,8 +1250,26 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                     </div>
                   </div>
 
+                  {/* Resolucao do revisor */}
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, fontFamily: F }}>O que fazer com isto?</span>
+                    {Object.entries(RESOLUTION_META).map(([key, m]) => {
+                      const ativo = resolutions[i] === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={(e) => { e.stopPropagation(); changeResolution(i, ativo ? null : key); }}
+                          disabled={savingResolution === i}
+                          style={{ padding: "5px 12px", borderRadius: 8, border: `1.5px solid ${ativo ? m.border : "#e2e8f0"}`, background: ativo ? m.bg : "white", cursor: savingResolution === i ? "wait" : "pointer", fontSize: 11, fontWeight: 600, color: ativo ? m.color : "#64748b", fontFamily: F, transition: "all 0.15s" }}
+                        >
+                          {m.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   {/* Per-alert feedback */}
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, fontFamily: F }}>Este alerta é correto?</span>
                     <button onClick={(e) => { e.stopPropagation(); setAlertVotes(v => ({ ...v, [i]: true })); }} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 8, border: `1.5px solid ${alertVotes[i] === true ? "#10b981" : "#e2e8f0"}`, background: alertVotes[i] === true ? "#f0fdf4" : "white", cursor: "pointer", fontSize: 11, fontWeight: 600, color: alertVotes[i] === true ? "#16a34a" : "#64748b", fontFamily: F, transition: "all 0.15s" }}>
                       <ThumbsUp size={13} /> Sim
@@ -1656,6 +1710,14 @@ const LEGAL_CHECK = {
                  hint: "A lei confere, mas este artigo não veio na consulta. Confira o dispositivo." },
   ungrounded:  { label: "Citação sem respaldo", color: "#b91c1c", bg: "#fef2f2", border: "#fecaca",
                  hint: "Nada na base legal consultada sustenta esta citação. Confira antes de usar." },
+};
+
+// O que o revisor decidiu sobre o alerta. Serve para percorrer uma lista longa
+// sem perder o que ja foi tratado entre uma sessao e outra.
+const RESOLUTION_META = {
+  to_fix:         { label: "Corrigir",       short: "Corrigir",      color: "#b45309", bg: "#fffbeb", border: "#fde68a" },
+  not_applicable: { label: "Não se aplica",  short: "Não se aplica", color: "#64748b", bg: "#f1f5f9", border: "#e2e8f0" },
+  resolved:       { label: "Resolvido",      short: "Resolvido",     color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0" },
 };
 
 const CheckBadge = ({ meta }) => meta ? (

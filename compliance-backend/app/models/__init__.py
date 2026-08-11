@@ -5,12 +5,12 @@ from app import (
     User, Document, Rule, Analysis, LegalDocument, LegalChunk,
     Organization, OrgMember, ContractTemplate, RuleOverride,
     ApprovalWorkflow, WebhookConfig,
-    AnalysisFeedback,
+    AnalysisFeedback, AlertFeedback,
 )
 
 __all__ = [
     "User", "Document", "Rule", "Analysis", "LegalDocument", "LegalChunk",
     "Organization", "OrgMember", "ContractTemplate", "RuleOverride",
     "ApprovalWorkflow", "WebhookConfig",
-    "AnalysisFeedback",
+    "AnalysisFeedback", "AlertFeedback",
 ]

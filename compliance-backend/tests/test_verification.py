@@ -4,6 +4,7 @@ import pytest
 from app.services.verification import (
     annotate_alerts,
     find_legal_source,
+    locate_excerpt,
     verification_summary,
     verify_excerpt,
     verify_legal_basis,
@@ -174,3 +175,53 @@ def test_annotate_anexa_o_dispositivo():
     resultado = annotate_alerts(alertas, CONTRATO, CONTEXTO_COM_TEXTO)[0]
     assert resultado["legal_source"]["article_ref"] == "Art. 7º"
     assert resultado["legal_basis_check"] == "grounded"
+
+
+# ─── Localizacao por pagina ───────────────────────────────────────────────────
+
+def test_localiza_trecho_na_primeira_pagina():
+    status, pagina = locate_excerpt(
+        "O pagamento de cada fatura será realizado em 90 (noventa) dias corridos",
+        CONTRATO,
+    )
+    assert status == "exact"
+    assert pagina == 1
+
+
+def test_localiza_trecho_na_segunda_pagina():
+    status, pagina = locate_excerpt(
+        "Fica eleito o foro da Comarca de Manaus, Estado do Amazonas",
+        CONTRATO,
+    )
+    assert status == "exact"
+    assert pagina == 2
+
+
+def test_trecho_nao_encontrado_nao_tem_pagina():
+    status, pagina = locate_excerpt("clausula inexistente sobre SLA de 99,99%", CONTRATO)
+    assert status == "not_found"
+    assert pagina is None
+
+
+def test_clausula_ausente_nao_tem_pagina():
+    status, pagina = locate_excerpt("—", CONTRATO)
+    assert status == "empty"
+    assert pagina is None
+
+
+def test_documento_sem_marcador_de_pagina():
+    """DOCX nao tem paginacao no texto extraido; o alerta fica sem pagina."""
+    texto = "Contrato simples com clausula de foro em Recife e prazo de 30 dias."
+    status, pagina = locate_excerpt("clausula de foro em Recife", texto)
+    assert status == "exact"
+    assert pagina is None
+
+
+def test_annotate_inclui_a_pagina():
+    alertas = [{
+        "rule_name": "Foro competente",
+        "excerpt": "Fica eleito o foro da Comarca de Manaus, Estado do Amazonas",
+        "legal_basis": None,
+    }]
+    resultado = annotate_alerts(alertas, CONTRATO, [])[0]
+    assert resultado["excerpt_page"] == 2
