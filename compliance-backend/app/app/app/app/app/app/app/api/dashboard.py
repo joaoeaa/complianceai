@@ -27,8 +27,6 @@ from app.schemas import (
     FeedbackSummary,
 )
 
-from app.services.scope import document_scope_filter, require_org_membership
-
 router = APIRouter(prefix="/dashboard", tags=["Dashboard & Analytics"])
 
 _SEVERITY_WEIGHT = {"high": 3.0, "medium": 2.0, "low": 1.0}
@@ -46,13 +44,15 @@ async def get_dashboard(
     from app import Document, Analysis
 
     # ── Base query filters ──
-    # O escopo manda: no pessoal contam os documentos proprios, no de equipe contam
-    # os da equipe inteira — as metricas precisam bater com o que o Historico lista.
-    if organization_id:
-        await require_org_membership(organization_id, current_user, db)
-
-    doc_filter = [document_scope_filter(current_user, organization_id)]
+    doc_filter = []
     analysis_filter = []
+
+    # Non-admins see only their documents
+    if current_user.role != "admin":
+        doc_filter.append(Document.user_id == current_user.id)
+
+    if organization_id:
+        doc_filter.append(Document.organization_id == organization_id)
 
     # ── Overview metrics ──
     total_q = select(func.count(Document.id)).where(*doc_filter) if doc_filter else select(func.count(Document.id))

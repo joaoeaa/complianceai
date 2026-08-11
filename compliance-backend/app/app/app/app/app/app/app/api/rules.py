@@ -14,15 +14,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models import Rule, RuleOverride, User
+from app.models import OrgMember, Rule, RuleOverride, User
 from app.schemas import RuleCreate, RuleResponse, RuleUpdate
-from app.services.scope import require_org_membership as _require_org_membership
 from app.services.rule_scope import apply_overrides, overrides_query, visible_rules_query
 
 router = APIRouter(prefix="/rules", tags=["Regras de Conformidade"])
 
 
 # ─── Helpers de escopo ────────────────────────────────────────────────────────
+
+async def _require_org_membership(
+    org_id: uuid.UUID, user: User, db: AsyncSession, *, must_manage: bool = False
+) -> OrgMember:
+    """Confirma que o usuário pertence à organização e, se pedido, que pode gerenciá-la."""
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.organization_id == org_id, OrgMember.user_id == user.id
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Organização não encontrada")
+    if must_manage and membership.role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas responsáveis pela organização podem alterar as regras da equipe",
+        )
+    return membership
+
 
 async def _get_rule_or_404(rule_id: uuid.UUID, db: AsyncSession) -> Rule:
     result = await db.execute(select(Rule).where(Rule.id == rule_id))

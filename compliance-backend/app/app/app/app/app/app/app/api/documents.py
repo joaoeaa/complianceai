@@ -8,8 +8,7 @@ from uuid import UUID
 import aiofiles
 import re
 from pathlib import Path
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request, status, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
@@ -24,12 +23,6 @@ from app.schemas import (
     AnalysisStatusResponse,
 )
 from app.services.document_extractor import get_mime_type, extract_text
-from app.services.scope import (
-    document_scope_filter,
-    get_document_for_delete,
-    get_document_for_read,
-    require_org_membership,
-)
 from app.services.report_generator import generate_pdf_report, generate_html_report
 
 settings = get_settings()
@@ -52,9 +45,6 @@ def _doc_to_response(doc: Document) -> DocumentResponse:
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
-    organization_id: Optional[UUID] = Form(
-        None, description="Envia para o escopo desta equipe; omitido usa o escopo pessoal"
-    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -62,9 +52,6 @@ async def upload_document(
     Upload a PDF or DOCX document and trigger async analysis.
     Returns a task ID for status polling.
     """
-    if organization_id is not None:
-        await require_org_membership(organization_id, current_user, db)
-
     # Validate extension
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -115,7 +102,6 @@ async def upload_document(
         mime_type=mime_type,
         status="uploaded",
         extracted_text=extracted,
-        organization_id=organization_id,
     )
     db.add(doc)
     await db.flush()
@@ -141,19 +127,13 @@ async def list_documents(
     search: str = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    organization_id: Optional[UUID] = Query(
-        None, description="Documentos desta equipe; omitido lista os pessoais"
-    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Lista os documentos do escopo escolhido, com filtros opcionais."""
-    if organization_id is not None:
-        await require_org_membership(organization_id, current_user, db)
-
+    """List documents for the current user with optional filters."""
     query = (
         select(Document)
-        .where(document_scope_filter(current_user, organization_id))
+        .where(Document.user_id == current_user.id)
         .order_by(desc(Document.uploaded_at))
     )
 
@@ -201,7 +181,12 @@ async def get_document(
     current_user: User = Depends(get_current_user),
 ):
     """Get a single document by ID."""
-    doc = await get_document_for_read(document_id, current_user, db)
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current_user.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     analysis_result = await db.execute(select(Analysis).where(Analysis.document_id == doc.id))
     doc.analysis = analysis_result.scalar_one_or_none()
@@ -215,7 +200,12 @@ async def get_report(
     current_user: User = Depends(get_current_user),
 ):
     """Get the full analysis report for a document."""
-    doc = await get_document_for_read(document_id, current_user, db)
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current_user.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     analysis_result = await db.execute(select(Analysis).where(Analysis.document_id == doc.id))
     analysis = analysis_result.scalar_one_or_none()
@@ -242,7 +232,12 @@ async def get_analysis_status(
     current_user: User = Depends(get_current_user),
 ):
     """Poll the analysis status of a document."""
-    doc = await get_document_for_read(document_id, current_user, db)
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current_user.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     # Check Celery task status if task_id provided
     message = ""
@@ -283,7 +278,12 @@ async def download_report_html(
     from fastapi.responses import HTMLResponse
     from app.services.report_generator import generate_html_report, generate_pdf_report
 
-    doc = await get_document_for_read(document_id, current_user, db)
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current_user.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     analysis_result = await db.execute(select(Analysis).where(Analysis.document_id == doc.id))
     analysis = analysis_result.scalar_one_or_none()
@@ -311,8 +311,13 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Exclui o documento e a análise. Em equipe: quem enviou ou os responsáveis."""
-    doc = await get_document_for_delete(document_id, current_user, db)
+    """Delete a document and its analysis permanently."""
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current_user.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     # Delete file from disk
     if os.path.exists(doc.file_path):
@@ -331,8 +336,13 @@ async def download_report(
     Gera e retorna o PDF do relatório para o documento especificado.
     Verifica ownership e busca a análise mais recente.
     """
-    # 1) Buscar documento respeitando o escopo (pessoal ou da equipe)
-    document = await get_document_for_read(document_id, current_user, db)
+    # 1) Buscar documento e validar que pertence ao usuário
+    doc_res = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current_user.id)
+    )
+    document = doc_res.scalar_one_or_none()
+    if not document:
+        raise HTTPException(status_code=404, detail="Documento não encontrado ou sem permissão.")
 
     # 2) Buscar a análise mais recente deste documento
     analysis_res = await db.execute(

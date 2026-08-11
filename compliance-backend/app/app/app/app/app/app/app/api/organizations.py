@@ -103,19 +103,11 @@ async def list_organizations(
     """List organizations the current user belongs to."""
     from app import Organization, OrgMember
 
-    # O total de membros vem de uma subquery propria: contar sobre o JOIN filtrado
-    # por user_id devolveria sempre 1, porque so a linha do proprio usuario sobra.
-    member_count = (
-        select(func.count(OrgMember.id))
-        .where(OrgMember.organization_id == Organization.id)
-        .correlate(Organization)
-        .scalar_subquery()
-    )
-
     result = await db.execute(
-        select(Organization, member_count.label("member_count"))
+        select(Organization, func.count(OrgMember.id).label("member_count"))
         .join(OrgMember, Organization.id == OrgMember.organization_id)
         .where(OrgMember.user_id == current_user.id)
+        .group_by(Organization.id)
     )
     rows = result.all()
 

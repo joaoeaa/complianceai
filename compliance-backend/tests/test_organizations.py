@@ -254,3 +254,26 @@ async def test_cannot_remove_last_owner(client: AsyncClient, auth_headers: dict)
     resp = await client.delete(f"/api/v1/organizations/{org_id}/members/{owner_user_id}", headers=auth_headers)
     assert resp.status_code == 400
     assert "proprietário" in resp.json()["detail"].lower()
+
+
+async def test_list_organizations_counts_all_members(
+    client: AsyncClient, auth_headers: dict, admin_headers: dict
+):
+    """member_count conta a equipe inteira, nao so quem esta consultando."""
+    created = await client.post(
+        "/api/v1/organizations",
+        json={"name": "Contagem", "slug": "contagem"},
+        headers=auth_headers,
+    )
+    org_id = created.json()["id"]
+
+    await client.post(
+        f"/api/v1/organizations/{org_id}/members",
+        json={"email": "admin@test.com", "role": "member"},
+        headers=auth_headers,
+    )
+
+    for headers in (auth_headers, admin_headers):
+        resp = await client.get("/api/v1/organizations", headers=headers)
+        org = next(o for o in resp.json() if o["id"] == org_id)
+        assert org["member_count"] == 2
