@@ -268,3 +268,22 @@ def test_find_legal_source_recorre_a_base():
 
     fonte = find_legal_source("Art. 421, CC", CONTEXTO, lookup)
     assert fonte["article_ref"] == "Art. 421"
+
+
+def test_citacao_apenas_da_lei_confere():
+    """Alerta sobre ausencia de clausula cita a lei, nao um artigo."""
+    def lookup(_):
+        return {"source": "Lei 12.846/2013", "article_ref": None, "content": None}
+
+    assert verify_legal_basis("Lei 12.846/2013", CONTEXTO, lookup) == "law_only"
+
+
+def test_citacao_apenas_da_lei_nao_exibe_dispositivo():
+    def lookup(_):
+        return {"source": "Lei 12.846/2013", "article_ref": None, "content": None}
+
+    assert find_legal_source("Lei 12.846/2013", CONTEXTO, lookup) is None
+
+
+def test_lei_inexistente_segue_sem_respaldo():
+    assert verify_legal_basis("Lei 99.999/2099", CONTEXTO, lambda _: None) == "ungrounded"

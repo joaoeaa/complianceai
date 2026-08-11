@@ -223,8 +223,11 @@ def verify_legal_basis(
     if cited_articles and cited_articles & context_articles:
         return "grounded"
 
-    if base_lookup is not None and base_lookup(legal_basis):
-        return "in_base"
+    if base_lookup is not None:
+        achado = base_lookup(legal_basis)
+        if achado:
+            # Sem article_ref, o que se confirmou foi a lei, nao um dispositivo.
+            return "in_base" if achado.get("article_ref") else "law_only"
 
     if not context:
         return "no_context"
@@ -264,7 +267,11 @@ def find_legal_source(
             }
 
     # Nao veio no contexto, mas pode estar na base: o revisor ainda quer ler o texto.
-    return base_lookup(legal_basis) if base_lookup else None
+    if not base_lookup:
+        return None
+    achado = base_lookup(legal_basis)
+    # Citacao so da lei nao tem dispositivo para exibir.
+    return achado if achado and achado.get("content") else None
 
 
 def annotate_alerts(

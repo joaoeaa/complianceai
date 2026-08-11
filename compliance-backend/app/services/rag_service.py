@@ -372,9 +372,20 @@ def make_base_lookup(db: Session) -> Any:
         from app.services.verification import _article_numbers, _law_tokens
 
         artigos = _article_numbers(legal_basis)
-        if not artigos:
-            return None
         leis = _law_tokens(legal_basis)
+
+        if not artigos:
+            # Citacao so da lei, sem artigo: acontece quando o alerta aponta a
+            # AUSENCIA de uma clausula inteira. Basta confirmar que a lei existe.
+            if not leis:
+                return None
+            fontes = db.execute(
+                sa_text("SELECT DISTINCT source FROM legal_documents")
+            ).scalars().all()
+            for fonte in fontes:
+                if leis & _law_tokens(fonte or ""):
+                    return {"source": fonte, "article_ref": None, "content": None}
+            return None
 
         linhas = db.execute(
             sa_text(
