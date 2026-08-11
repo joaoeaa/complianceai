@@ -184,9 +184,12 @@ class ApiClient {
     URL.revokeObjectURL(a.href);
   }
   // Rules
-  async listRules(activeOnly = false) {
-    const qs = activeOnly ? "?active_only=true" : "";
-    return this.request(`/rules${qs}`);
+  async listRules(activeOnly = false, organizationId = null) {
+    const p = new URLSearchParams();
+    if (activeOnly) p.set("active_only", "true");
+    if (organizationId) p.set("organization_id", organizationId);
+    const qs = p.toString();
+    return this.request(`/rules${qs ? `?${qs}` : ""}`);
   }
 
   async createRule(data) {
@@ -201,8 +204,9 @@ class ApiClient {
     return this.request(`/rules/${id}`, { method: "DELETE" });
   }
 
-  async toggleRule(id) {
-    return this.request(`/rules/${id}/toggle`, { method: "PATCH" });
+  async toggleRule(id, organizationId = null) {
+    const qs = organizationId ? `?organization_id=${organizationId}` : "";
+    return this.request(`/rules/${id}/toggle${qs}`, { method: "PATCH" });
   }
 
   // Dashboard
@@ -1575,7 +1579,8 @@ const SCOPE_META = {
   organization: { label: "Equipe", color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe", hint: "Regra da equipe, compartilhada com os membros." },
 };
 
-const RulesPage = ({ showToast }) => {
+// CRUD de regras. Sem `organizationId` opera no escopo pessoal; com ele, no da equipe.
+const RulesManager = ({ showToast, organizationId = null, canManage = true, embedded = false }) => {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1586,14 +1591,14 @@ const RulesPage = ({ showToast }) => {
 
   const fetchRules = useCallback(async () => {
     try {
-      const data = await api.listRules();
+      const data = await api.listRules(false, organizationId);
       setRules(data || []);
     } catch (err) {
       showToast(err.message, "error");
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, organizationId]);
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
@@ -1609,7 +1614,7 @@ const RulesPage = ({ showToast }) => {
         setRules(rules.map(r => r.id === editId ? updated : r));
         showToast("Regra atualizada!", "success");
       } else {
-        const created = await api.createRule(fd);
+        const created = await api.createRule(organizationId ? { ...fd, organization_id: organizationId } : fd);
         setRules([...rules, created]);
         showToast("Regra criada!", "success");
       }
@@ -1635,7 +1640,7 @@ const RulesPage = ({ showToast }) => {
 
   const toggle = async (id) => {
     try {
-      const updated = await api.toggleRule(id);
+      const updated = await api.toggleRule(id, organizationId);
       setRules(rules.map(r => r.id === id ? updated : r));
     } catch (err) {
       showToast(err.message, "error");
@@ -1646,9 +1651,21 @@ const RulesPage = ({ showToast }) => {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
-        <div><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Regras de Conformidade</h1><p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>{rules.filter(r => r.is_active).length} ativas de {rules.length}</p></div>
-        <button onClick={() => showForm ? setShowForm(false) : openNew()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 12, background: showForm ? "#f1f5f9" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: showForm ? "#64748b" : "white", fontFamily: F }}>{showForm ? <><X size={15} /> Cancelar</> : <><Plus size={15} /> Nova Regra</>}</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: embedded ? 14 : 20, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          {embedded
+            ? <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", margin: 0, fontFamily: F }}>Regras da equipe</h3>
+            : <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Minhas Regras</h1>}
+          <p style={{ color: "#64748b", fontSize: embedded ? 11 : 13, marginTop: 3, fontFamily: F }}>
+            {embedded
+              ? "Valem para os documentos analisados por esta equipe"
+              : "Valem para os documentos que você analisa fora de uma equipe"}
+            {" · "}{rules.filter(r => r.is_active).length} ativas de {rules.length}
+          </p>
+        </div>
+        {canManage && (
+          <button onClick={() => showForm ? setShowForm(false) : openNew()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 12, background: showForm ? "#f1f5f9" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: showForm ? "#64748b" : "white", fontFamily: F }}>{showForm ? <><X size={15} /> Cancelar</> : <><Plus size={15} /> Nova Regra</>}</button>
+        )}
       </div>
       {showForm && (
         <div style={{ background: "white", borderRadius: 13, border: "1px solid #e2e8f0", padding: "22px", marginBottom: 18, animation: "fadeSlideUp 0.3s ease" }}>
@@ -1674,13 +1691,13 @@ const RulesPage = ({ showToast }) => {
                 <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{rule.name}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 1, fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rule.description}</div></div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                {rule.editable !== false && (
+                {rule.editable !== false && canManage && (
                   <>
                     <button onClick={() => openEdit(rule)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Editar"><Edit3 size={12} color="#6366f1" /></button>
                     <button onClick={() => setDelC(rule.id)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Excluir"><Trash2 size={12} color="#ef4444" /></button>
                   </>
                 )}
-                <button onClick={() => toggle(rule.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }} title={rule.is_active ? "Desativar para mim" : "Ativar para mim"}>{rule.is_active ? <ToggleRight size={24} color="#6366f1" /> : <ToggleLeft size={24} color="#cbd5e1" />}</button>
+                <button onClick={() => canManage && toggle(rule.id)} disabled={!canManage} style={{ background: "none", border: "none", cursor: canManage ? "pointer" : "default", padding: 2, opacity: canManage ? 1 : 0.5 }} title={canManage ? (rule.is_active ? (organizationId ? "Desativar para a equipe" : "Desativar para mim") : (organizationId ? "Ativar para a equipe" : "Ativar para mim")) : "Somente responsáveis pela equipe podem alterar"}>{rule.is_active ? <ToggleRight size={24} color="#6366f1" /> : <ToggleLeft size={24} color="#cbd5e1" />}</button>
               </div>
             </div>
             <div style={{ marginTop: 8, padding: "7px 10px", background: "#f8fafc", borderRadius: 5 }}><div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", marginBottom: 2, fontFamily: F }}>Critério:</div><div style={{ fontSize: 11, color: "#475569", fontFamily: F }}>{rule.criteria}</div></div>
@@ -1697,6 +1714,10 @@ const RulesPage = ({ showToast }) => {
     </div>
   );
 };
+
+// Aba "Regras": escopo pessoal. As regras de equipe ficam na aba Equipe,
+// junto do restante da configuracao da organizacao.
+const RulesPage = ({ showToast }) => <RulesManager showToast={showToast} />;
 
 // ── Team / Organizations Page ──
 const ROLE_META = {
@@ -1816,6 +1837,16 @@ const TeamPage = ({ showToast, user }) => {
               <UserPlus size={15} /> Adicionar membro
             </button>
           )}
+        </div>
+
+        {/* Regras da equipe */}
+        <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 18 }}>
+          <RulesManager
+            showToast={showToast}
+            organizationId={selectedOrg.id}
+            canManage={isAdmin}
+            embedded
+          />
         </div>
 
         {/* Members List */}
