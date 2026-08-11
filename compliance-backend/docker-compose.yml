@@ -1,0 +1,67 @@
+services:
+  # ─── PostgreSQL ───
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: compliance_db
+    environment:
+      POSTGRES_USER: compliance_user
+      POSTGRES_PASSWORD: compliance_pass
+      POSTGRES_DB: compliance_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compliance_user -d compliance_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───
+  redis:
+    image: redis:7-alpine
+    container_name: compliance_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── FastAPI Backend ───
+  api:
+    build: .
+    container_name: compliance_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./storage:/app/storage
+      - ./.env:/app/.env
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Celery Worker ───
+  worker:
+    build: .
+    container_name: compliance_worker
+    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./app:/app/app
+      - ./storage:/app/storage
+      - ./.env:/app/.env
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
