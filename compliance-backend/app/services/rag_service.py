@@ -359,6 +359,52 @@ async def search_relevant_chunks_async(
 
 # ─── Context Building for Prompt Enrichment ───
 
+def make_base_lookup(db: Session) -> Any:
+    """Devolve uma função que procura um artigo citado na base legal inteira.
+
+    A busca semântica traz só o top-k, então um artigo correto e pertinente pode
+    ficar de fora do contexto de uma análise. Sem consultar a base, esse artigo
+    seria rotulado como citação sem respaldo, embora exista e possa ser lido.
+    """
+    from sqlalchemy import text as sa_text
+
+    def lookup(legal_basis: str) -> Optional[Dict[str, str]]:
+        from app.services.verification import _article_numbers, _law_tokens
+
+        artigos = _article_numbers(legal_basis)
+        if not artigos:
+            return None
+        leis = _law_tokens(legal_basis)
+
+        linhas = db.execute(
+            sa_text(
+                "SELECT ld.source, lc.article_ref, lc.content "
+                "FROM legal_chunks lc JOIN legal_documents ld ON ld.id = lc.document_id "
+                "WHERE lc.article_ref IS NOT NULL"
+            )
+        ).fetchall()
+
+        candidatos = []
+        for source, ref, content in linhas:
+            if not (_article_numbers(ref or "") & artigos):
+                continue
+            mesma_lei = bool(leis & _law_tokens(f"{source} {ref}"))
+            candidatos.append((mesma_lei, source, ref, content))
+
+        if not candidatos:
+            return None
+        # Prefere o artigo da lei citada; sem isso, "Art. 51" casaria com o
+        # artigo 51 de qualquer uma das dez leis da base.
+        candidatos.sort(key=lambda c: not c[0])
+        if leis and not candidatos[0][0]:
+            return None
+
+        _, source, ref, content = candidatos[0]
+        return {"source": source, "article_ref": ref, "content": (content or "").strip()}
+
+    return lookup
+
+
 def build_legal_context_sync(
     document_text: str,
     rules: List[Dict[str, Any]],

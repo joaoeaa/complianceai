@@ -1706,6 +1706,8 @@ const EXCERPT_CHECK = {
 const LEGAL_CHECK = {
   grounded:    { label: "Artigo conferido",  color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0",
                  hint: "O artigo citado está na base legal consultada nesta análise." },
+  in_base:     { label: "Artigo na base",    color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0",
+                 hint: "O dispositivo existe na base legal e pode ser lido abaixo, embora não tenha sido usado como contexto desta análise." },
   law_only:    { label: "Artigo a conferir", color: "#b45309", bg: "#fffbeb", border: "#fde68a",
                  hint: "A lei confere, mas este artigo não veio na consulta. Confira o dispositivo." },
   ungrounded:  { label: "Citação sem respaldo", color: "#b91c1c", bg: "#fef2f2", border: "#fecaca",

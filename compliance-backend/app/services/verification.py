@@ -18,11 +18,14 @@ from __future__ import annotations
 import re
 import unicodedata
 from difflib import SequenceMatcher
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 # Marcador de página inserido pelo extrator, irrelevante para a comparação.
 _PAGE_MARKER = re.compile(r"---\s*Página\s+\d+\s*---", re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s+")
+
+# "[...]", "(...)" ou reticências: o modelo usa para juntar passagens distantes.
+_ELLIPSIS = re.compile(r"\[\s*\.\.\.\s*\]|\(\s*\.\.\.\s*\)|\.{3,}|…")
 
 # "Art. 7º", "art 7", "Artigo 7-A", "Art. 5º, § 2º", "Art. 1.337"
 # O ponto de milhar aparece nas leis longas, como o Código Civil.
@@ -103,13 +106,22 @@ def locate_excerpt(
     if not cleaned or cleaned in {"-", "—", "--", "N/A", "n/a"}:
         return "empty", None
 
-    needle = _normalize(cleaned)
     haystack = _normalize(document_text)
+    paginas = _page_index(document_text)
 
+    # O modelo costuma juntar duas passagens distantes com "[...]". Buscar a string
+    # inteira falharia sempre, embora cada parte exista no documento.
+    partes = [p.strip() for p in _ELLIPSIS.split(cleaned) if p.strip()]
+    if len(partes) > 1:
+        posicoes = [haystack.find(_normalize(p)) for p in partes]
+        if all(pos >= 0 for pos in posicoes):
+            return "exact", _page_at(min(posicoes), paginas)
+        # Se só um pedaço falhou, a citação como um todo merece conferência.
+        return "not_found", None
+
+    needle = _normalize(cleaned)
     if not needle:
         return "empty", None
-
-    paginas = _page_index(document_text)
 
     posicao = haystack.find(needle)
     if posicao >= 0:
@@ -174,24 +186,29 @@ def _law_tokens(text: str) -> set[str]:
 
 
 def verify_legal_basis(
-    legal_basis: Optional[str], legal_context: Iterable[dict[str, Any]]
+    legal_basis: Optional[str],
+    legal_context: Iterable[dict[str, Any]],
+    base_lookup: Optional[Callable[[str], Optional[dict[str, str]]]] = None,
 ) -> str:
-    """Confere se o artigo citado está entre os recuperados da base legal.
+    """Confere o quanto a citação legal do alerta pode ser conferida.
 
     Devolve:
-        "grounded"     o artigo consta do contexto usado na análise
-        "law_only"     a lei confere, mas o artigo específico não foi recuperado
-        "ungrounded"   nada no contexto sustenta a citação
+        "grounded"     o artigo consta do contexto que embasou esta análise
+        "in_base"      o artigo existe na base legal, embora não tenha sido
+                       recuperado aqui: a citação aponta um dispositivo real
+        "law_only"     a lei confere, mas o artigo específico não foi localizado
+        "ungrounded"   não há como conferir a citação
         "empty"        o alerta não citou base legal
         "no_context"   a busca na base legal não retornou nada nesta análise
+
+    `base_lookup` consulta a base inteira. Sem ele, um artigo correto que apenas
+    não entrou no top-k da busca era rotulado "sem respaldo", o que mina a
+    confiança justamente onde a verificação deveria construí-la.
     """
     if not legal_basis or not str(legal_basis).strip():
         return "empty"
 
     context = list(legal_context or [])
-    if not context:
-        return "no_context"
-
     cited_articles = _article_numbers(legal_basis)
     cited_laws = _law_tokens(legal_basis)
 
@@ -205,13 +222,22 @@ def verify_legal_basis(
 
     if cited_articles and cited_articles & context_articles:
         return "grounded"
+
+    if base_lookup is not None and base_lookup(legal_basis):
+        return "in_base"
+
+    if not context:
+        return "no_context"
+
     if cited_laws and cited_laws & context_laws:
         return "law_only"
     return "ungrounded"
 
 
 def find_legal_source(
-    legal_basis: Optional[str], legal_context: Iterable[dict[str, Any]]
+    legal_basis: Optional[str],
+    legal_context: Iterable[dict[str, Any]],
+    base_lookup: Optional[Callable[[str], Optional[dict[str, str]]]] = None,
 ) -> Optional[dict[str, str]]:
     """Devolve o dispositivo citado, com o texto da lei, quando ele foi recuperado.
 
@@ -236,13 +262,16 @@ def find_legal_source(
                 "article_ref": ref,
                 "content": content,
             }
-    return None
+
+    # Nao veio no contexto, mas pode estar na base: o revisor ainda quer ler o texto.
+    return base_lookup(legal_basis) if base_lookup else None
 
 
 def annotate_alerts(
     alerts: list[dict[str, Any]],
     document_text: str,
     legal_context: Iterable[dict[str, Any]],
+    base_lookup: Optional[Callable[[str], Optional[dict[str, str]]]] = None,
 ) -> list[dict[str, Any]]:
     """Anota cada alerta com o resultado das verificações e o texto da lei citada."""
     context = list(legal_context or [])
@@ -255,9 +284,11 @@ def annotate_alerts(
                 "excerpt_check": status,
                 "excerpt_page": pagina,
                 "legal_basis_check": verify_legal_basis(
-                    alert.get("legal_basis"), context
+                    alert.get("legal_basis"), context, base_lookup
                 ),
-                "legal_source": find_legal_source(alert.get("legal_basis"), context),
+                "legal_source": find_legal_source(
+                    alert.get("legal_basis"), context, base_lookup
+                ),
             }
         )
     return annotated

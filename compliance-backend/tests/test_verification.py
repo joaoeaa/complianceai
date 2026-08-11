@@ -225,3 +225,46 @@ def test_annotate_inclui_a_pagina():
     }]
     resultado = annotate_alerts(alertas, CONTRATO, [])[0]
     assert resultado["excerpt_page"] == 2
+
+
+# ─── Trecho com reticencias e artigo fora do contexto ─────────────────────────
+
+def test_excerpt_com_reticencias_junta_dois_trechos():
+    """O modelo usa [...] para unir passagens distantes; ambas existem."""
+    citacao = "O pagamento de cada fatura [...] Fica eleito o foro da Comarca de Manaus"
+    status, pagina = locate_excerpt(citacao, CONTRATO)
+    assert status == "exact"
+    assert pagina == 1
+
+
+def test_excerpt_com_reticencias_e_parte_inventada():
+    citacao = "O pagamento de cada fatura [...] clausula inexistente sobre SLA"
+    status, _ = locate_excerpt(citacao, CONTRATO)
+    assert status == "not_found"
+
+
+def test_artigo_fora_do_contexto_mas_presente_na_base():
+    """Sem consultar a base, uma citacao correta virava 'sem respaldo'."""
+    def lookup(_):
+        return {"source": "Lei 10.406/2002", "article_ref": "Art. 421", "content": "texto"}
+
+    assert verify_legal_basis("Art. 421, CC", CONTEXTO, lookup) == "in_base"
+
+
+def test_contexto_tem_prioridade_sobre_a_base():
+    def lookup(_):
+        return {"source": "x", "article_ref": "Art. 7o", "content": "y"}
+
+    assert verify_legal_basis("Art. 7º, LGPD", CONTEXTO, lookup) == "grounded"
+
+
+def test_artigo_inexistente_segue_sem_respaldo():
+    assert verify_legal_basis("Art. 9999, CC", CONTEXTO, lambda _: None) == "ungrounded"
+
+
+def test_find_legal_source_recorre_a_base():
+    def lookup(_):
+        return {"source": "Lei 10.406/2002", "article_ref": "Art. 421", "content": "A liberdade"}
+
+    fonte = find_legal_source("Art. 421, CC", CONTEXTO, lookup)
+    assert fonte["article_ref"] == "Art. 421"

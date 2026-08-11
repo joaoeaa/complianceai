@@ -195,7 +195,11 @@ def analyze_document_task(self, document_id: str):
             from app.services.ai_analyzer import PROMPT_VERSION
             from app.services.verification import annotate_alerts, verification_summary
 
-            verified_alerts = annotate_alerts(result.alerts, extracted_text, legal_context)
+            from app.services.rag_service import make_base_lookup
+
+            verified_alerts = annotate_alerts(
+                result.alerts, extracted_text, legal_context, make_base_lookup(db)
+            )
             resumo = verification_summary(verified_alerts)
             logger.info(
                 "Verificação: %d/%d trechos localizados no contrato, "

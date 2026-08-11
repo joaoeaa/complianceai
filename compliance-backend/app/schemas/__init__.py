@@ -137,7 +137,7 @@ class AlertSchema(BaseModel):
     # campos e simplesmente não exibem selo.
     excerpt_check: Optional[str] = None       # exact | approximate | not_found | empty
     excerpt_page: Optional[int] = None        # pagina onde o trecho foi localizado
-    legal_basis_check: Optional[str] = None   # grounded | law_only | ungrounded | empty | no_context
+    legal_basis_check: Optional[str] = None   # grounded | in_base | law_only | ungrounded | empty | no_context
     legal_source: Optional[LegalSourceSchema] = None
     # Preenchido pelo endpoint de relatorio a partir do feedback do revisor.
     resolution: Optional[str] = None
