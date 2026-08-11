@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 
 // ── API Configuration ──
-const API_BASE = "http://localhost:8000/api/v1";
+// Em produção, defina VITE_API_URL (ex.: https://api.seudominio.com)
+const API_ORIGIN = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API_BASE = `${API_ORIGIN}/api/v1`;
 
 class ApiClient {
   constructor() {
@@ -70,7 +72,7 @@ class ApiClient {
       return data;
     } catch (err) {
       if (err.message === "Failed to fetch") {
-        throw new Error("Servidor indisponível. Verifique se o backend está rodando em localhost:8000");
+        throw new Error(`Servidor indisponível. Verifique se o backend está acessível em ${API_ORIGIN}`);
       }
       throw err;
     }
@@ -365,7 +367,7 @@ const LoginPage = ({ onLogin }) => {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch("http://localhost:8000/health", { method: "GET", signal: AbortSignal.timeout(3000) });
+        const res = await fetch(`${API_ORIGIN}/health`, { method: "GET", signal: AbortSignal.timeout(3000) });
         if (!cancelled) setBackendOnline(res.ok);
       } catch {
         if (!cancelled) setBackendOnline(false);
@@ -459,7 +461,7 @@ const LoginPage = ({ onLogin }) => {
         <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center", marginTop: 14 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: backendOnline === null ? "#f59e0b" : backendOnline ? "#10b981" : "#ef4444", transition: "background 0.3s" }} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            {backendOnline === null ? "Verificando backend..." : backendOnline ? "Backend conectado em localhost:8000" : "Backend offline — execute: uvicorn app.main:app --reload"}
+            {backendOnline === null ? "Verificando backend..." : backendOnline ? `Backend conectado em ${API_ORIGIN}` : "Backend offline — verifique se a API está no ar"}
           </span>
         </div>
       </div>

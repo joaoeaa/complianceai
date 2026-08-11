@@ -1,0 +1,37 @@
+# ---------- Segredos (NUNCA na imagem) ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- Banco e uploads locais ----------
+*.db
+*.sqlite
+*.sqlite3
+storage/uploads/
+storage/*.db
+
+# ---------- Dev / docs ----------
+.git/
+.gitignore
+README.md
+docker-compose.yml
+tests/
+teste_rag_completo.py
+relatorio_teste.pdf
+nul
+
+# ---------- Editores ----------
+.vscode/
+.idea/
+.DS_Store
