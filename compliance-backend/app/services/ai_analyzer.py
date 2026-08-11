@@ -34,6 +34,10 @@ class AnalysisResult:
 
 # ─── Prompt Template ───
 
+# Incrementar a cada mudanca no prompt ou no formato de saida. Fica gravado em
+# cada analise, para que um resultado antigo possa ser explicado depois.
+PROMPT_VERSION = "1"
+
 SYSTEM_PROMPT = """Você é um assistente especializado em análise de contratos e documentos legais.
 
 Sua função é:

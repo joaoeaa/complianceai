@@ -1155,6 +1155,21 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                         <CheckBadge meta={LEGAL_CHECK[alert.legal_basis_check]} />
                       </div>
                       <div style={{ fontSize: 12, color: "#312e81", lineHeight: 1.6, fontWeight: 500, fontFamily: F }}>{alert.legal_basis}</div>
+                      {alert.legal_source?.content && (
+                        <details style={{ marginTop: 8 }}>
+                          <summary style={{ fontSize: 11, color: "#4338ca", cursor: "pointer", fontWeight: 600, fontFamily: F }}>
+                            Ler o dispositivo
+                          </summary>
+                          <div style={{ marginTop: 7, padding: "10px 12px", background: "rgba(255,255,255,0.75)", borderRadius: 8, border: "1px solid #c7d2fe" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#4338ca", marginBottom: 4, fontFamily: F }}>
+                              {alert.legal_source.source} {alert.legal_source.article_ref}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "#312e81", lineHeight: 1.65, fontFamily: F, whiteSpace: "pre-wrap" }}>
+                              {alert.legal_source.content}
+                            </div>
+                          </div>
+                        </details>
+                      )}
                     </div>
                   )}
 
@@ -1286,6 +1301,26 @@ const ReportPage = ({ docId, onBack, showToast }) => {
             )}
           </>
         )}
+
+        <div style={{ marginTop: 26, padding: "14px 18px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 11 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+            <Info size={15} color="#94a3b8" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.65, fontFamily: F }}>
+                Esta análise é gerada por inteligência artificial e serve como apoio à revisão contratual.
+                Ela <strong>não substitui parecer jurídico</strong>. Confira os trechos citados no documento
+                original e os dispositivos legais antes de tomar qualquer decisão.
+              </div>
+              {(analysis.model || analysis.analyzed_at) && (
+                <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 7, fontFamily: F }}>
+                  {analysis.analyzed_at && <>Analisado em {new Date(analysis.analyzed_at).toLocaleString("pt-BR")}</>}
+                  {analysis.model && <> · modelo {analysis.model}</>}
+                  {analysis.prompt_version && <> · critérios v{analysis.prompt_version}</>}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

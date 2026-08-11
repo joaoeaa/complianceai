@@ -3,6 +3,7 @@ import pytest
 
 from app.services.verification import (
     annotate_alerts,
+    find_legal_source,
     verification_summary,
     verify_excerpt,
     verify_legal_basis,
@@ -139,3 +140,37 @@ def test_summary_conta_por_categoria():
     assert s["excerpt_unverified"] == 1
     assert s["legal_grounded"] == 1
     assert s["legal_ungrounded"] == 1
+
+
+# ─── Texto da lei anexado ao alerta ───────────────────────────────────────────
+
+CONTEXTO_COM_TEXTO = [
+    {
+        "source": "Lei 13.709/2018",
+        "article_ref": "Art. 7º",
+        "content": "O tratamento de dados pessoais somente podera ser realizado nas seguintes hipoteses: I - mediante o fornecimento de consentimento pelo titular;",
+    },
+]
+
+
+def test_dispositivo_citado_vem_com_o_texto_da_lei():
+    fonte = find_legal_source("Art. 7º, LGPD", CONTEXTO_COM_TEXTO)
+    assert fonte is not None
+    assert fonte["article_ref"] == "Art. 7º"
+    assert fonte["source"] == "Lei 13.709/2018"
+    assert "consentimento pelo titular" in fonte["content"]
+
+
+def test_artigo_fora_do_contexto_nao_traz_texto():
+    assert find_legal_source("Art. 99, LGPD", CONTEXTO_COM_TEXTO) is None
+
+
+def test_alerta_sem_base_legal_nao_traz_texto():
+    assert find_legal_source(None, CONTEXTO_COM_TEXTO) is None
+
+
+def test_annotate_anexa_o_dispositivo():
+    alertas = [{"rule_name": "LGPD", "excerpt": "—", "legal_basis": "Art. 7º da LGPD"}]
+    resultado = annotate_alerts(alertas, CONTRATO, CONTEXTO_COM_TEXTO)[0]
+    assert resultado["legal_source"]["article_ref"] == "Art. 7º"
+    assert resultado["legal_basis_check"] == "grounded"

@@ -44,6 +44,16 @@ def _risk_label(score: int) -> str:
     return "Alto"
 
 
+def _traceability(analysis: dict) -> str:
+    """Modelo e versao dos criterios, para que o relatorio possa ser auditado depois."""
+    partes = []
+    if analysis.get("model"):
+        partes.append(f"modelo {analysis['model']}")
+    if analysis.get("prompt_version"):
+        partes.append(f"critérios v{analysis['prompt_version']}")
+    return (" | " + " | ".join(partes)) if partes else ""
+
+
 def generate_html_report(
     document: Dict[str, Any],
     analysis: Dict[str, Any],
@@ -303,12 +313,15 @@ def generate_html_report(
 
     <h2>Regras Verificadas ({len(rules)})</h2>
     <ul>
-        {"".join(f'<li><strong>{r.get("name", "")}</strong> — Severidade: {_severity_label(r.get("severity", "medium"))}</li>' for r in rules)}
+        {"".join(f'<li><strong>{r.get("name", "")}</strong>: severidade {_severity_label(r.get("severity", "medium"))}</li>' for r in rules)}
     </ul>
 
     <div class="footer">
-        ComplianceAI — Análise automatizada de contratos com IA<br>
-        Este relatório foi gerado automaticamente. Consulte um profissional jurídico para decisões finais.
+        <strong>ComplianceAI</strong> | Análise automatizada de contratos com IA<br><br>
+        Esta análise é gerada por inteligência artificial e serve como apoio à revisão contratual.
+        <strong>Não substitui parecer jurídico.</strong> Confira os trechos citados no documento
+        original e os dispositivos legais antes de tomar qualquer decisão.<br><br>
+        Gerado em {now_str}{_traceability(analysis)}
     </div>
 </body>
 </html>"""

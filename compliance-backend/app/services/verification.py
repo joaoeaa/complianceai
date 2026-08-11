@@ -162,12 +162,41 @@ def verify_legal_basis(
     return "ungrounded"
 
 
+def find_legal_source(
+    legal_basis: Optional[str], legal_context: Iterable[dict[str, Any]]
+) -> Optional[dict[str, str]]:
+    """Devolve o dispositivo citado, com o texto da lei, quando ele foi recuperado.
+
+    Sem isto o alerta exibe "Art. 7º, LGPD" como texto morto, e conferir exige sair
+    da tela. Com o texto à mão, o revisor lê o artigo e julga na hora.
+    """
+    if not legal_basis:
+        return None
+
+    cited = _article_numbers(legal_basis)
+    if not cited:
+        return None
+
+    for chunk in legal_context or []:
+        ref = str(chunk.get("article_ref") or "")
+        if _article_numbers(ref) & cited:
+            content = str(chunk.get("content") or "").strip()
+            if not content:
+                return None
+            return {
+                "source": str(chunk.get("source") or ""),
+                "article_ref": ref,
+                "content": content,
+            }
+    return None
+
+
 def annotate_alerts(
     alerts: list[dict[str, Any]],
     document_text: str,
     legal_context: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Anota cada alerta com o resultado das duas verificações."""
+    """Anota cada alerta com o resultado das verificações e o texto da lei citada."""
     context = list(legal_context or [])
     annotated = []
     for alert in alerts:
@@ -178,6 +207,7 @@ def annotate_alerts(
                 "legal_basis_check": verify_legal_basis(
                     alert.get("legal_basis"), context
                 ),
+                "legal_source": find_legal_source(alert.get("legal_basis"), context),
             }
         )
     return annotated

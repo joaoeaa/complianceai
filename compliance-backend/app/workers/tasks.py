@@ -192,6 +192,7 @@ def analyze_document_task(self, document_id: str):
             # 4.5 Verifica o que o modelo afirmou. O trecho citado tem que existir no
             # contrato e o artigo citado tem que estar entre os recuperados pelo RAG.
             # Quem revisa precisa saber onde confiar e onde conferir na fonte.
+            from app.services.ai_analyzer import PROMPT_VERSION
             from app.services.verification import annotate_alerts, verification_summary
 
             verified_alerts = annotate_alerts(result.alerts, extracted_text, legal_context)
@@ -227,6 +228,8 @@ def analyze_document_task(self, document_id: str):
                 missing_clauses=result.missing_clauses,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
+                model=settings.ANTHROPIC_MODEL,
+                prompt_version=PROMPT_VERSION,
             )
             db.add(analysis)
             doc.status = "analyzed"

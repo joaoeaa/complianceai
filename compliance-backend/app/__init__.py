@@ -185,6 +185,10 @@ class Analysis(Base):
     missing_clauses = Column(JSON, default=list)
     prompt_tokens = Column(Integer, nullable=True)  # for cost tracking
     completion_tokens = Column(Integer, nullable=True)
+    # Rastreabilidade: duas analises so sao comparaveis se sairam do mesmo modelo
+    # e da mesma versao do prompt. Sem isto nao ha como auditar uma mudanca.
+    model = Column(String(64), nullable=True)
+    prompt_version = Column(String(16), nullable=True)
     analyzed_at = Column(DateTime(timezone=True), default=utcnow)
 
     document = relationship("Document", back_populates="analysis")

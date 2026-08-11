@@ -105,6 +105,13 @@ class DocumentListResponse(BaseModel):
 
 # --- Analysis / Alerts ---
 
+class LegalSourceSchema(BaseModel):
+    """Dispositivo legal citado, com o texto da lei, quando o RAG o recuperou."""
+    source: str
+    article_ref: str
+    content: str
+
+
 class AlertSchema(BaseModel):
     rule_name: str
     severity: str
@@ -112,6 +119,11 @@ class AlertSchema(BaseModel):
     issue: str
     suggestion: str
     legal_basis: Optional[str] = None
+    # Resultado da conferência feita em código. Análises antigas não têm estes
+    # campos e simplesmente não exibem selo.
+    excerpt_check: Optional[str] = None       # exact | approximate | not_found | empty
+    legal_basis_check: Optional[str] = None   # grounded | law_only | ungrounded | empty | no_context
+    legal_source: Optional[LegalSourceSchema] = None
 
 class AnalysisResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -123,6 +135,8 @@ class AnalysisResponse(BaseModel):
     missing_clauses: List[str] = []
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
     analyzed_at: datetime
 
 class ReportResponse(BaseModel):
