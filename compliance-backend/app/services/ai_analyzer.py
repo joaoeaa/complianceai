@@ -299,7 +299,8 @@ def analyze_document(
         messages=[{"role": "user", "content": user_prompt}],
     )
 
-    raw_text = response.content[0].text
+    # O modelo pode emitir blocos de thinking antes do texto — pegar o primeiro bloco de texto
+    raw_text = next(block.text for block in response.content if block.type == "text")
     logger.info(f"Resposta recebida: {response.usage.input_tokens} input, {response.usage.output_tokens} output tokens")
 
     parsed = _parse_llm_response(raw_text)
