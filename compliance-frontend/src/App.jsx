@@ -7,7 +7,7 @@ import {
   Edit3, ToggleLeft, ToggleRight, Info, ArrowUpRight, Home,
   Mail, KeyRound, Calendar, SlidersHorizontal, ChevronUp, RefreshCw,
   BookOpen, Scale, Hash, ExternalLink, Users, UserPlus, Building, Crown,
-  ThumbsUp, ThumbsDown, Star, MessageSquare, Send
+  ThumbsUp, ThumbsDown, Star, MessageSquare, Send, Check
 } from "lucide-react";
 
 // ── API Configuration ──
@@ -113,6 +113,7 @@ class ApiClient {
   async uploadDocument(file) {
     const form = new FormData();
     form.append("file", file);
+    if (this.scopeOrgId) form.append("organization_id", this.scopeOrgId);
     return this.request("/documents/upload", { method: "POST", body: form });
   }
 
@@ -122,6 +123,7 @@ class ApiClient {
     if (params.search) qs.set("search", params.search);
     if (params.offset != null) qs.set("offset", params.offset);
     if (params.limit) qs.set("limit", params.limit);
+    if (this.scopeOrgId) qs.set("organization_id", this.scopeOrgId);
     const q = qs.toString();
     return this.request(`/documents${q ? `?${q}` : ""}`);
   }
@@ -184,6 +186,18 @@ class ApiClient {
     URL.revokeObjectURL(a.href);
   }
   // Rules
+  // Escopo de trabalho ativo: null = pessoal, uuid = equipe. Vale para documentos,
+  // dashboard e regras, para que todas as telas mostrem o mesmo recorte.
+  get scopeOrgId() {
+    return this._scopeOrgId ?? localStorage.getItem("scope_org_id") ?? null;
+  }
+
+  setScope(orgId) {
+    this._scopeOrgId = orgId || null;
+    if (orgId) localStorage.setItem("scope_org_id", orgId);
+    else localStorage.removeItem("scope_org_id");
+  }
+
   async listRules(activeOnly = false, organizationId = null) {
     const p = new URLSearchParams();
     if (activeOnly) p.set("active_only", "true");
@@ -211,7 +225,8 @@ class ApiClient {
 
   // Dashboard
   async getDashboard() {
-    return this.request("/dashboard");
+    const qs = this.scopeOrgId ? `?organization_id=${this.scopeOrgId}` : "";
+    return this.request(`/dashboard${qs}`);
   }
 
   // Legislation
@@ -1717,7 +1732,9 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
 
 // Aba "Regras": escopo pessoal. As regras de equipe ficam na aba Equipe,
 // junto do restante da configuracao da organizacao.
-const RulesPage = ({ showToast }) => <RulesManager showToast={showToast} />;
+const RulesPage = ({ showToast, scopeOrgId }) => (
+  <RulesManager showToast={showToast} organizationId={scopeOrgId || null} />
+);
 
 // ── Team / Organizations Page ──
 const ROLE_META = {
@@ -1997,6 +2014,65 @@ const TeamPage = ({ showToast, user }) => {
 };
 
 // ── Main App ──
+// Seletor do escopo de trabalho. Trocar aqui muda dashboard, histórico, nova
+// análise e regras de uma vez — é o contexto da sessão, não uma opção por tela.
+const ScopeSwitcher = ({ scopeOrgId, orgs, onChange, isMobile }) => {
+  const [open, setOpen] = useState(false);
+  const current = orgs.find(o => o.id === scopeOrgId);
+  const label = current ? current.name : "Pessoal";
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontFamily: F, maxWidth: isMobile ? 150 : 240 }}
+        title="Escopo de trabalho"
+      >
+        <div style={{ width: 22, height: 22, borderRadius: 6, background: current ? "#f5f3ff" : "#eef2ff", border: `1px solid ${current ? "#ddd6fe" : "#c7d2fe"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {current ? <Users size={12} color="#7c3aed" /> : <User size={12} color="#6366f1" />}
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <ChevronDown size={13} color="#94a3b8" style={{ flexShrink: 0 }} />
+      </button>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
+          <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 220, background: "white", borderRadius: 11, border: "1px solid #e2e8f0", boxShadow: "0 10px 30px -10px rgba(15,23,42,0.25)", zIndex: 61, overflow: "hidden" }}>
+            <div style={{ padding: "9px 13px 6px", fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: F }}>Escopo de trabalho</div>
+
+            <button onClick={() => { onChange(null); setOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", border: "none", background: !scopeOrgId ? "#f8fafc" : "white", cursor: "pointer", textAlign: "left", fontFamily: F }}>
+              <User size={14} color="#6366f1" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a" }}>Pessoal</div>
+                <div style={{ fontSize: 10, color: "#94a3b8" }}>Seus documentos e regras</div>
+              </div>
+              {!scopeOrgId && <Check size={14} color="#6366f1" />}
+            </button>
+
+            {orgs.map(o => (
+              <button key={o.id} onClick={() => { onChange(o.id); setOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", border: "none", borderTop: "1px solid #f8fafc", background: scopeOrgId === o.id ? "#f8fafc" : "white", cursor: "pointer", textAlign: "left", fontFamily: F }}>
+                <Users size={14} color="#7c3aed" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</div>
+                  <div style={{ fontSize: 10, color: "#94a3b8" }}>Compartilhado com a equipe</div>
+                </div>
+                {scopeOrgId === o.id && <Check size={14} color="#7c3aed" />}
+              </button>
+            ))}
+
+            {orgs.length === 0 && (
+              <div style={{ padding: "9px 13px 12px", fontSize: 11, color: "#94a3b8", fontFamily: F, borderTop: "1px solid #f8fafc" }}>
+                Você ainda não participa de equipes. Crie uma na aba Equipe.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 export default function ComplianceApp() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
@@ -2007,8 +2083,38 @@ export default function ComplianceApp() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [scopeOrgId, setScopeOrgId] = useState(() => api.scopeOrgId);
+  const [myOrgs, setMyOrgs] = useState([]);
 
   useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener("resize", c); return () => window.removeEventListener("resize", c); }, []);
+
+  // Equipes de que o usuário participa, para alimentar o seletor de escopo.
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    api.listOrganizations()
+      .then(list => {
+        if (cancelled) return;
+        const orgs = list || [];
+        setMyOrgs(orgs);
+        // Escopo salvo que não existe mais (saiu da equipe): volta para o pessoal.
+        setScopeOrgId(prev => {
+          if (prev && !orgs.some(o => o.id === prev)) {
+            api.setScope(null);
+            return null;
+          }
+          return prev;
+        });
+      })
+      .catch(() => { if (!cancelled) setMyOrgs([]); });
+    return () => { cancelled = true; };
+  }, [loggedIn]);
+
+  const changeScope = (orgId) => {
+    api.setScope(orgId);
+    setScopeOrgId(orgId);
+    setSelectedDoc(null);
+  };
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -2050,7 +2156,7 @@ export default function ComplianceApp() {
       case "report": return <ReportPage docId={selectedDoc} onBack={() => navigate("history")} showToast={showToast} />;
       case "history": return <HistoryPage onViewReport={viewReport} showToast={showToast} />;
       case "legislation": return <LegislationPage showToast={showToast} />;
-      case "rules": return <RulesPage showToast={showToast} />;
+      case "rules": return <RulesPage showToast={showToast} scopeOrgId={scopeOrgId} />;
       case "team": return <TeamPage showToast={showToast} user={user} />;
       default: return <DashboardPage onNavigate={navigate} onViewReport={viewReport} />;
     }
@@ -2075,16 +2181,17 @@ export default function ComplianceApp() {
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(3, 1fr) !important; } .dashboard-grid { grid-template-columns: 1fr !important; } .report-grid { grid-template-columns: 1fr !important; } .report-stats { grid-template-columns: repeat(2, 1fr) !important; } }
         @media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(2, 1fr) !important; } .dashboard-grid { grid-template-columns: 1fr !important; } .report-grid { grid-template-columns: 1fr !important; } .report-stats { grid-template-columns: 1fr !important; } .upload-features { grid-template-columns: 1fr !important; } .history-header { display: none !important; } .history-row { grid-template-columns: 1fr !important; gap: 6px !important; } }
       `}</style>
-      <Sidebar currentPage={currentPage} onNavigate={navigate} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} user={user} onLogout={() => { setLoggedIn(false); setUser(null); api.clearTokens(); }} isMobile={isMobile} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+      <Sidebar currentPage={currentPage} onNavigate={navigate} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} user={user} onLogout={() => { setLoggedIn(false); setUser(null); setMyOrgs([]); api.setScope(null); setScopeOrgId(null); api.clearTokens(); }} isMobile={isMobile} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
       <div style={{ marginLeft: sidebarW, transition: "margin-left 0.3s ease", minHeight: "100vh" }}>
         <div style={{ padding: isMobile ? "10px 14px" : "12px 32px", background: "rgba(255,255,255,0.8)", backdropFilter: "blur(12px)", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, position: "sticky", top: 0, zIndex: 50 }}>
           {isMobile && <button onClick={() => setMobileMenuOpen(true)} style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Menu size={17} color="#374151" /></button>}
           <div style={{ flex: 1 }} />
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ScopeSwitcher scopeOrgId={scopeOrgId} orgs={myOrgs} onChange={changeScope} isMobile={isMobile} />
             {!isMobile && <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 10px 4px 4px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white" }}><div style={{ width: 26, height: 26, borderRadius: 6, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}><User size={13} color="white" /></div><span style={{ fontSize: 11, fontWeight: 600, color: "#374151", fontFamily: F }}>{user?.full_name}</span></div>}
           </div>
         </div>
-        <div style={{ padding: isMobile ? "18px 14px" : "28px 32px", maxWidth: 1160, animation: "fadeSlideUp 0.4s ease" }}>{renderPage()}</div>
+        <div key={scopeOrgId || "personal"} style={{ padding: isMobile ? "18px 14px" : "28px 32px", maxWidth: 1160, animation: "fadeSlideUp 0.4s ease" }}>{renderPage()}</div>
       </div>
       {toastMsg && <Toast message={toastMsg.message} type={toastMsg.type} onClose={() => setToastMsg(null)} />}
     </div>
