@@ -525,7 +525,7 @@ const LoginPage = ({ onLogin, initialMode = "login", onVoltar }) => {
           <h1 style={{ color: "white", fontSize: "clamp(26px,4vw,40px)", fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.03em", maxWidth: 480, margin: "0 0 16px" }}>Análise de contratos com IA em minutos, não horas.</h1>
           <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 15, lineHeight: 1.7, maxWidth: 440 }}>Identifique riscos, verifique conformidade e gere relatórios automaticamente.</p>
           <div style={{ display: "flex", gap: 28, marginTop: 40, flexWrap: "wrap" }}>
-            {[{ val: "< 2min", lbl: "por análise" }, { val: "99%", lbl: "uptime" }, { val: "AES-256", lbl: "criptografia" }].map((s, i) => (
+            {[{ val: "10 leis", lbl: "na íntegra" }, { val: "29", lbl: "verificações" }, { val: "por cliente", lbl: "controle de acesso" }].map((s, i) => (
               <div key={i}><div style={{ color: "#818cf8", fontSize: 20, fontWeight: 800 }}>{s.val}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 2 }}>{s.lbl}</div></div>
             ))}
           </div>
@@ -940,7 +940,7 @@ const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true
           )}
           {file && <button onClick={startAnalysis} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 18, padding: "13px", borderRadius: 11, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontSize: 14, fontWeight: 700, fontFamily: F, boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}><Zap size={17} /> Iniciar Análise com IA</button>}
           <div className="upload-features" style={{ display: "grid", gap: 10, marginTop: 32 }}>
-            {[{ icon: Lock, title: "Criptografia AES-256", desc: "Documentos protegidos" }, { icon: Zap, title: "Análise com IA", desc: "Resultado em minutos" }, { icon: Shield, title: "Multi-legislação", desc: "LGPD, CDC, CC, CLT e mais" }].map((item, i) => (
+            {[{ icon: Lock, title: "Acesso por cliente", desc: "Com registro de quem abriu" }, { icon: Zap, title: "Análise com Claude AI", desc: "Cada alerta é conferido" }, { icon: Shield, title: "Dez leis na íntegra", desc: "LGPD, CDC, CC, CLT e mais" }].map((item, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px", borderRadius: 9, background: "#f8fafc" }}><item.icon size={15} color="#6366f1" /><div><div style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", fontFamily: F }}>{item.title}</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{item.desc}</div></div></div>
             ))}
           </div>

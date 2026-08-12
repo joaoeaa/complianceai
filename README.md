@@ -480,6 +480,28 @@ Pontos que costumam morder:
 - **Uploads**: validação de tipo e tamanho máximo configurável
 - **LGPD**: `DELETE /documents/{id}` remove documento e análises associadas
 - **Segredos**: carregados exclusivamente do `.env`, que está no `.gitignore`
+- **Transporte**: HTTPS, fornecido pela plataforma de hospedagem
+
+### O que ainda não é criptografado
+
+Vale ser explícito, porque a interface já afirmou o contrário e isso foi corrigido:
+
+| Item | Situação |
+|---|---|
+| Tráfego entre navegador e API | Cifrado por HTTPS |
+| Senha | Hash bcrypt, não é criptografia reversível |
+| **Arquivo enviado, em disco** | **Gravado em claro** |
+| **Texto extraído, na coluna `documents.extracted_text`** | **Em claro** |
+| Disco do servidor e do banco | Depende do que a plataforma de hospedagem aplica ao volume, fora do controle da aplicação |
+
+A aplicação **não** implementa criptografia em repouso. Quem tiver acesso ao
+volume ou ao banco lê o conteúdo dos contratos. As proteções que existem são de
+controle de acesso e de registro, descritas acima, e não de cifragem.
+
+Implementar cifragem em repouso é viável, cifrando o arquivo e o campo de texto
+antes de gravar, e a decisão difícil não é o algoritmo e sim a gestão da chave:
+perder a chave significa perder o acervo inteiro, e guardá-la ao lado do dado
+cifrado não protege de quase nada.
 
 > **Antes de expor em produção:** troque o `SECRET_KEY`, remova o usuário admin de seed, restrinja `CORS_ORIGINS` e defina `APP_ENV=production`.
 
