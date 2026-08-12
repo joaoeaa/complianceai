@@ -567,7 +567,7 @@ const LoginPage = ({ onLogin, initialMode = "login", onVoltar }) => {
 
 // ── Sidebar ──
 const Sidebar = ({ currentPage, onNavigate, collapsed, onToggle, user, onLogout, isMobile, mobileOpen, onMobileClose }) => {
-  const navItems = [{ id: "dashboard", icon: Home, label: "Dashboard" }, { id: "upload", icon: Upload, label: "Nova Análise" }, { id: "history", icon: Clock, label: "Histórico" }, { id: "legislation", icon: BookOpen, label: "Base Legal" }, { id: "rules", icon: Settings, label: "Regras" }, { id: "clients", icon: Briefcase, label: "Clientes" }, { id: "team", icon: Users, label: "Equipe" }];
+  const navItems = [{ id: "dashboard", icon: Home, label: "Dashboard" }, { id: "upload", icon: Upload, label: "Nova Análise" }, { id: "history", icon: Clock, label: "Histórico" }, { id: "legislation", icon: BookOpen, label: "Base Legal" }, { id: "rules", icon: Settings, label: "Regras" }, { id: "team", icon: Users, label: "Equipe" }, { id: "clients", icon: Briefcase, label: "Clientes" }];
   const w = collapsed && !isMobile ? 72 : 260;
   const show = isMobile || !collapsed;
   const handleNav = (id) => { onNavigate(id); if (isMobile) onMobileClose(); };
@@ -2450,7 +2450,7 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [fd, setFd] = useState({ name: "", description: "", severity: "medium", criteria: "", category: "geral" });
-  const [areasFechadas, setAreasFechadas] = useState({});
+  const [areasAbertas, setAreasAbertas] = useState({});
   const [areaSalvando, setAreaSalvando] = useState(null);
   const [delC, setDelC] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -2598,13 +2598,13 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {grupos.map(([categoria, doGrupo]) => {
         const ativasNaArea = doGrupo.filter(r => r.is_active).length;
-        const fechada = !!areasFechadas[categoria];
+        const aberta = !!areasAbertas[categoria];
         const meta = AREA_META[categoria];
         return (
         <div key={categoria}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px 8px", borderBottom: "1px solid #e2e8f0", marginBottom: 10 }}>
-            <button onClick={() => setAreasFechadas({ ...areasFechadas, [categoria]: !fechada })} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: 0, flex: 1, minWidth: 0, textAlign: "left" }}>
-              {fechada ? <ChevronRight size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+            <button onClick={() => setAreasAbertas({ ...areasAbertas, [categoria]: !aberta })} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: 0, flex: 1, minWidth: 0, textAlign: "left" }}>
+              {aberta ? <ChevronDown size={14} color="#94a3b8" /> : <ChevronRight size={14} color="#94a3b8" />}
               <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{areaLabel(categoria)}</span>
               {meta && <span style={{ fontSize: 10, color: "#94a3b8", fontFamily: F }}>{meta.hint}</span>}
               <span style={{ fontSize: 10, fontWeight: 600, color: ativasNaArea ? "#6366f1" : "#94a3b8", background: ativasNaArea ? "#eef2ff" : "#f1f5f9", padding: "2px 8px", borderRadius: 20, fontFamily: F }}>{ativasNaArea} de {doGrupo.length}</span>
@@ -2615,7 +2615,7 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
               </button>
             )}
           </div>
-          {!fechada && (
+          {aberta && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {doGrupo.map((rule, i) => { const sev = getSeverityStyle(rule.severity); return (
           <div key={rule.id} style={{ background: "white", borderRadius: 11, border: "1px solid #e2e8f0", padding: "16px 18px", opacity: rule.is_active ? 1 : 0.55, transition: "all 0.3s", animation: `fadeSlideUp 0.4s ease ${i*0.05}s both` }}>
