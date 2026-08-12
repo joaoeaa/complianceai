@@ -916,7 +916,7 @@ const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true
 
   return (
     <div>
-      <div style={{ marginBottom: 28 }}><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Nova Análise</h1><p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Upload de contrato para análise automática com IA real (Claude)</p></div>
+      <div style={{ marginBottom: 28 }}><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Nova Análise</h1><p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Upload de contrato para análise automática com IA</p></div>
       {!analyzing ? (
         <div style={{ maxWidth: 600, margin: "0 auto" }}>
           <RegrasDaAnalise showToast={showToast} scopeOrgId={scopeOrgId} canManage={canManage} />
@@ -940,7 +940,7 @@ const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true
           )}
           {file && <button onClick={startAnalysis} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 18, padding: "13px", borderRadius: 11, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontSize: 14, fontWeight: 700, fontFamily: F, boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}><Zap size={17} /> Iniciar Análise com IA</button>}
           <div className="upload-features" style={{ display: "grid", gap: 10, marginTop: 32 }}>
-            {[{ icon: Lock, title: "Criptografia AES-256", desc: "Documentos protegidos" }, { icon: Zap, title: "Análise com Claude AI", desc: "Resultado em minutos" }, { icon: Shield, title: "Multi-legislação", desc: "LGPD, CDC, CC, CLT e mais" }].map((item, i) => (
+            {[{ icon: Lock, title: "Criptografia AES-256", desc: "Documentos protegidos" }, { icon: Zap, title: "Análise com IA", desc: "Resultado em minutos" }, { icon: Shield, title: "Multi-legislação", desc: "LGPD, CDC, CC, CLT e mais" }].map((item, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px", borderRadius: 9, background: "#f8fafc" }}><item.icon size={15} color="#6366f1" /><div><div style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", fontFamily: F }}>{item.title}</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{item.desc}</div></div></div>
             ))}
           </div>
@@ -1753,7 +1753,7 @@ const LegislationPage = ({ showToast }) => {
     <div>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Base Legal</h1>
-        <p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Legislação indexada para análise de compliance via IA</p>
+        <p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Legislação indexada para análise de compliance</p>
       </div>
 
       {/* Search bar */}
