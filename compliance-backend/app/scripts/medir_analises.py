@@ -87,8 +87,8 @@ def main() -> None:
         grupos.setdefault(chave, []).append(a)
 
     cabecalho = (
-        f"{'grupo':28s} {'n':>4s} {'seg':>7s} {'saída':>7s} "
-        f"{'alertas':>8s} {'trecho ok':>10s} {'citação ok':>11s}"
+        f"{'grupo':24s} {'n':>3s} {'seg':>6s} {'saída':>6s} "
+        f"{'alertas':>7s} {'tk/alerta':>9s} {'trecho ok':>10s} {'citação ok':>11s}"
     )
     print(cabecalho)
     print("-" * len(cabecalho))
@@ -111,19 +111,31 @@ def main() -> None:
             apoiadas += ap
             com_citacao += cc
 
-        segundos = f"{sum(duracoes) / len(duracoes) / 1000:7.1f}" if duracoes else "      ."
-        saida = f"{sum(saidas) / len(saidas):7.0f}" if saidas else "      ."
+        segundos = f"{sum(duracoes) / len(duracoes) / 1000:6.1f}" if duracoes else "     ."
+        saida = f"{sum(saidas) / len(saidas):6.0f}" if saidas else "     ."
+
+        # A medida comparavel entre grupos. Saida total depende de quantos alertas
+        # o contrato rende, e contratos diferentes rendem numeros muito diferentes:
+        # dividir pelo numero de alertas isola o quanto o modelo escreve por
+        # apontamento, que e o que uma mudanca de prompt de fato altera.
+        por_alerta = (
+            f"{sum(saidas) / total_alertas:9.0f}" if saidas and total_alertas else "        ."
+        )
+
         print(
-            f"{chave:28s} {len(lote):4d} {segundos} {saida} "
-            f"{total_alertas / len(lote):8.1f} "
+            f"{chave:24s} {len(lote):3d} {segundos} {saida} "
+            f"{total_alertas / len(lote):7.1f} {por_alerta} "
             f"{_pct(conferidos, com_trecho):>10s} {_pct(apoiadas, com_citacao):>11s}"
         )
 
     print()
     print("seg        média da chamada ao modelo, onde está quase todo o tempo")
     print("saída      média de tokens gerados; é o que determina o tempo")
-    print("alertas    média por documento; se cair junto com a saída, o modelo")
-    print("           passou a apontar menos, e não apenas a escrever menos")
+    print("alertas    média por documento; depende muito mais do contrato do que")
+    print("           da versão do prompt")
+    print("tk/alerta  tokens gastos por apontamento. É a coluna comparável entre")
+    print("           grupos: isola o quanto o modelo escreve de quantos problemas")
+    print("           o contrato tem")
     print("trecho ok  alertas cujo trecho citado foi localizado no documento")
     print("citação ok alertas cujo artigo citado foi localizado na base legal")
     print()
