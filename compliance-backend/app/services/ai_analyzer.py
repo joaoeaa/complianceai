@@ -36,7 +36,13 @@ class AnalysisResult:
 
 # Incrementar a cada mudanca no prompt ou no formato de saida. Fica gravado em
 # cada analise, para que um resultado antigo possa ser explicado depois.
-PROMPT_VERSION = "1"
+# Incrementar a cada mudança no texto do prompt: o valor fica gravado em
+# analyses.prompt_version, e sem ele não dá para saber qual redação produziu
+# uma análise antiga.
+#   1  redação inicial
+#   2  corrige o exemplo de JSON, que estava malformado, e passa a exigir
+#      explicitamente cópia literal no excerpt e null em vez de citação inventada
+PROMPT_VERSION = "2"
 
 SYSTEM_PROMPT = """Você é um assistente especializado em análise de contratos e documentos legais.
 
@@ -172,15 +178,28 @@ Responda EXCLUSIVAMENTE com o seguinte JSON (sem markdown, sem ```json, apenas o
     {{
       "rule_name": "Nome da regra violada",
       "severity": "high|medium|low",
-      "excerpt": "Trecho exato do documento que evidencia o problema (ou '—' se cláusula ausente)",
+      "excerpt": "Trecho copiado literalmente do documento (ou '-' se a cláusula estiver ausente)",
       "issue": "Descrição clara do problema encontrado",
       "suggestion": "Sugestão prática de como resolver",
       "legal_basis": "Artigo de lei relevante (ex: 'Art. 7º, LGPD', 'Art. 51, CDC', 'Art. 422, CC') ou null se não aplicável"
-      "OBS: Se houver base legal aplicável, coloque a referência exata no campo \"legal_basis\". Não invente referências; use as fornecidas em BASE LEGAL RELEVANTE quando possível."
     }}
   ],
   "missing_clauses": ["Lista de cláusulas/regras ausentes no documento"]
 }}
+
+EXIGÊNCIAS SOBRE OS DOIS CAMPOS QUE SÃO CONFERIDOS DEPOIS:
+
+1. "excerpt" precisa ser uma cópia literal do documento, caractere por caractere,
+   e não uma paráfrase. O sistema procura esse texto dentro do documento para
+   localizar a página e sinalizar ao revisor se a citação confere. Paráfrase faz
+   o alerta ser marcado como não localizado, o que reduz a confiança nele.
+   Para unir duas passagens distantes, use [...] entre elas.
+   Se a cláusula estiver ausente do contrato, use "-".
+
+2. "legal_basis" não pode ser inventado. Use preferencialmente os dispositivos
+   listados em BASE LEGAL RELEVANTE, citando o artigo no formato "Art. N, Lei".
+   Se nenhum dispositivo sustentar o alerta, use null: um alerta sem base legal
+   é melhor do que um alerta com base legal inexistente.
 
 REGRAS CONFIGURADAS PARA REFERÊNCIA DE NOMES: {json.dumps(rule_names, ensure_ascii=False)}
 """

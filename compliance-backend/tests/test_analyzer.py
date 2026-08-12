@@ -370,3 +370,36 @@ class TestAnalyzeDocument:
 
             with pytest.raises(ValueError, match="(?i)inválid"):
                 analyze_document("Texto.", _sample_rules())
+
+
+def test_exemplo_de_json_no_prompt_e_valido():
+    """O exemplo de saída dentro do prompt precisa ser JSON que parseia.
+
+    Ele já esteve malformado: faltava vírgula depois de "legal_basis" e havia uma
+    chave "OBS" solta no meio do objeto. Mandar um exemplo inválido e pedir JSON
+    puro de volta é trabalhar contra o próprio pedido.
+    """
+    import json
+
+    from app.services.ai_analyzer import _build_user_prompt
+
+    prompt = _build_user_prompt(
+        "CONTRATO", [{"name": "R", "severity": "high", "criteria": "c"}], [], None
+    )
+    inicio = prompt.index('{\n  "summary"')
+    exemplo = prompt[inicio:prompt.index("\n\nEXIGÊNCIAS", inicio)]
+
+    carregado = json.loads(exemplo)
+    assert set(carregado) == {"summary", "risk_score", "alerts", "missing_clauses"}
+    assert set(carregado["alerts"][0]) == {
+        "rule_name", "severity", "excerpt", "issue", "suggestion", "legal_basis",
+    }
+
+
+def test_prompt_exige_copia_literal_no_excerpt():
+    """É o campo que a verificação confere contra o documento."""
+    from app.services.ai_analyzer import _build_user_prompt
+
+    prompt = _build_user_prompt("CONTRATO", [], [], None)
+    assert "cópia literal" in prompt
+    assert "[...]" in prompt
