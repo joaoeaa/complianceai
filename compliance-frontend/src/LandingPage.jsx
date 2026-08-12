@@ -23,7 +23,7 @@ const PASSOS = [
   },
   {
     titulo: "O sistema busca a lei aplicável",
-    texto: "Busca por semelhança de sentido em uma base com dez leis brasileiras completas, e não na memória do modelo.",
+    texto: "Busca por semelhança de sentido em 3.927 artigos de dez leis brasileiras completas, e não na memória do modelo.",
   },
   {
     titulo: "A IA analisa contra as suas regras",
@@ -132,7 +132,7 @@ export default function LandingPage({ onEntrar, onCriarConta }) {
       <Secao style={{ paddingTop: "clamp(52px, 9vw, 96px)", paddingBottom: "clamp(40px, 6vw, 64px)" }}>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 13px", borderRadius: 20, background: "#eef2ff", marginBottom: 22 }}>
           <Scale size={13} color="#6366f1" />
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#6366f1" }}>Legislação brasileira, dez leis na íntegra</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#6366f1" }}>3.927 artigos de lei indexados, dez leis na íntegra</span>
         </div>
         <h1 style={{ fontSize: "clamp(32px, 6.2vw, 56px)", fontWeight: 800, letterSpacing: "-1.8px", lineHeight: 1.06, margin: "0 0 18px", maxWidth: 780, textWrap: "balance" }}>
           Revisão de contrato com IA que mostra{" "}
@@ -235,8 +235,8 @@ export default function LandingPage({ onEntrar, onCriarConta }) {
 
         <Texto style={{ marginTop: 24, fontSize: 14, color: "#64748b" }}>
           A diferença não está no texto do alerta. Está nos dois selos verdes: o sistema procurou
-          o trecho dentro do seu PDF e achou na página 2, e procurou o artigo citado em uma base
-          com dez leis na íntegra e achou. Quando não acha, ele diz que não achou, em vez de
+          o trecho dentro do seu PDF e achou na página 2, e procurou o artigo citado entre 3.927
+          artigos de dez leis na íntegra e achou. Quando não acha, ele diz que não achou, em vez de
           deixar você descobrir depois.
         </Texto>
       </Secao>

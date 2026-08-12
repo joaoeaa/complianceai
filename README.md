@@ -2,7 +2,7 @@
 
 **Plataforma de IA para análise de conformidade de contratos sob a legislação brasileira.**
 
-Faça upload de um contrato em PDF ou DOCX e receba um relatório de conformidade apontando cláusulas problemáticas, riscos e recomendações, com fundamentação nos artigos de lei aplicáveis. A base cobre dez leis brasileiras na íntegra: Código Civil, CLT, CDC, LGPD, Marco Civil, Lei Anticorrupção, Lei de Licitações, Lei do Inquilinato, Lei das S.A. e Lei de Propriedade Industrial.
+Faça upload de um contrato em PDF ou DOCX e receba um relatório de conformidade apontando cláusulas problemáticas, riscos e recomendações, com fundamentação nos artigos de lei aplicáveis. A base cobre 3.927 artigos de dez leis brasileiras na íntegra: Código Civil, CLT, CDC, LGPD, Marco Civil, Lei Anticorrupção, Lei de Licitações, Lei do Inquilinato, Lei das S.A. e Lei de Propriedade Industrial.
 
 A análise combina **Claude AI** com **RAG** (busca semântica sobre uma base de legislação vetorizada), de modo que cada alerta cita o dispositivo legal em que se apoia em vez de depender apenas do conhecimento paramétrico do modelo.
 

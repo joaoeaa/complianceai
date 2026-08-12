@@ -525,7 +525,11 @@ const LoginPage = ({ onLogin, initialMode = "login", onVoltar }) => {
           <h1 style={{ color: "white", fontSize: "clamp(26px,4vw,40px)", fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.03em", maxWidth: 480, margin: "0 0 16px" }}>Análise de contratos com IA em minutos, não horas.</h1>
           <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 15, lineHeight: 1.7, maxWidth: 440 }}>Identifique riscos, verifique conformidade e gere relatórios automaticamente.</p>
           <div style={{ display: "flex", gap: 28, marginTop: 40, flexWrap: "wrap" }}>
-            {[{ val: "10 leis", lbl: "na íntegra" }, { val: "29", lbl: "verificações" }, { val: "por cliente", lbl: "controle de acesso" }].map((s, i) => (
+            {/* Números conferidos na base de produção em 12/08/2026. Para recontar:
+                select count(*) from (select distinct d.source, ch.article_ref
+                from legal_chunks ch join legal_documents d on d.id=ch.document_id
+                where ch.article_ref is not null) t */}
+            {[{ val: "3.927", lbl: "artigos de lei indexados" }, { val: "10", lbl: "leis brasileiras na íntegra" }, { val: "29", lbl: "verificações configuráveis" }].map((s, i) => (
               <div key={i}><div style={{ color: "#818cf8", fontSize: 20, fontWeight: 800 }}>{s.val}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 2 }}>{s.lbl}</div></div>
             ))}
           </div>
