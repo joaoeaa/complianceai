@@ -334,3 +334,48 @@ def test_selo_de_artigo_nao_depende_do_que_o_modelo_afirma():
 
     honesto = {"excerpt": "-", "legal_basis": "Art. 6º, I, LGPD"}
     assert annotate_alerts([honesto], "doc", contexto)[0]["legal_basis_check"] == "grounded"
+
+
+class TestDenominadoresDoResumo:
+    """Cláusula ausente não tem trecho a conferir, e não é falha de verificação.
+
+    Contá-la entre as não conferidas produzia "3 de 10" onde o correto era
+    "3 de 3". Foi o bastante para me fazer suspeitar de uma regressão que não
+    existia, e teria sido o bastante para o dono do produto desconfiar dele.
+    """
+
+    def test_alerta_sem_trecho_fica_fora_do_denominador(self):
+        alertas = [
+            {"excerpt_check": "exact", "legal_basis_check": "grounded"},
+            {"excerpt_check": "empty", "legal_basis_check": "empty"},
+            {"excerpt_check": "empty", "legal_basis_check": "empty"},
+        ]
+        resumo = verification_summary(alertas)
+
+        assert resumo["total"] == 3
+        assert resumo["excerpt_checkable"] == 1
+        assert resumo["excerpt_exact"] == 1
+        assert resumo["legal_checkable"] == 1
+        assert resumo["legal_grounded"] == 1
+
+    def test_artigo_na_base_conta_como_apoiado(self):
+        """`in_base` é dispositivo real, apenas não recuperado nesta análise."""
+        resumo = verification_summary([
+            {"excerpt_check": "exact", "legal_basis_check": "in_base"},
+        ])
+        assert resumo["legal_grounded"] == 1
+        assert resumo["legal_ungrounded"] == 0
+
+    def test_nao_conferido_continua_aparecendo(self):
+        resumo = verification_summary([
+            {"excerpt_check": "not_found", "legal_basis_check": "ungrounded"},
+        ])
+        assert resumo["excerpt_unverified"] == 1
+        assert resumo["legal_ungrounded"] == 1
+        assert resumo["excerpt_exact"] == 0
+
+    def test_sem_alertas_nao_quebra(self):
+        resumo = verification_summary([])
+        assert resumo["total"] == 0
+        assert resumo["excerpt_checkable"] == 0
+        assert resumo["legal_checkable"] == 0

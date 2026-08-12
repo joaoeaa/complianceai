@@ -302,18 +302,38 @@ def annotate_alerts(
 
 
 def verification_summary(alerts: Iterable[dict[str, Any]]) -> dict[str, int]:
-    """Contagem para exibir no topo do relatório."""
+    """Contagem para exibir no topo do relatório e registrar no log.
+
+    Os denominadores importam. "Ausência de cláusula anticorrupção" não tem trecho
+    para conferir, e contá-lo entre os não conferidos produz um número que parece
+    falha e não é: 3 de 10 quando o correto era 3 de 3. Esse número chegou a me
+    fazer suspeitar de uma regressão que não existia.
+
+    `total` continua sendo o total de alertas, mas as taxas ganham denominador
+    próprio, contando apenas os alertas em que havia o que verificar.
+    """
     alerts = list(alerts)
+    com_trecho = [
+        a for a in alerts if a.get("excerpt_check") not in (None, "empty")
+    ]
+    com_citacao = [
+        a for a in alerts if a.get("legal_basis_check") not in (None, "empty")
+    ]
     return {
         "total": len(alerts),
-        "excerpt_exact": sum(1 for a in alerts if a.get("excerpt_check") == "exact"),
+        "excerpt_checkable": len(com_trecho),
+        "excerpt_exact": sum(1 for a in com_trecho if a.get("excerpt_check") == "exact"),
         "excerpt_unverified": sum(
-            1 for a in alerts if a.get("excerpt_check") == "not_found"
+            1 for a in com_trecho if a.get("excerpt_check") == "not_found"
         ),
+        "legal_checkable": len(com_citacao),
+        # "in_base" também é dispositivo real, só não recuperado nesta análise:
+        # separá-lo de "grounded" subestimava o quanto foi de fato confirmado.
         "legal_grounded": sum(
-            1 for a in alerts if a.get("legal_basis_check") == "grounded"
+            1 for a in com_citacao
+            if a.get("legal_basis_check") in ("grounded", "in_base")
         ),
         "legal_ungrounded": sum(
-            1 for a in alerts if a.get("legal_basis_check") == "ungrounded"
+            1 for a in com_citacao if a.get("legal_basis_check") == "ungrounded"
         ),
     }

@@ -162,10 +162,12 @@ def analyze_document_task(self, document_id: str):
             )
             resumo = verification_summary(verified_alerts)
             logger.info(
-                "Verificação: %d/%d trechos localizados no contrato, "
-                "%d/%d citações apoiadas na base legal",
-                resumo["excerpt_exact"], resumo["total"],
-                resumo["legal_grounded"], resumo["total"],
+                "Verificação: %d/%d trechos localizados, %d/%d citações apoiadas "
+                "(%d alertas sem trecho e %d sem citação a conferir)",
+                resumo["excerpt_exact"], resumo["excerpt_checkable"],
+                resumo["legal_grounded"], resumo["legal_checkable"],
+                resumo["total"] - resumo["excerpt_checkable"],
+                resumo["total"] - resumo["legal_checkable"],
             )
             if resumo["excerpt_unverified"] or resumo["legal_ungrounded"]:
                 logger.warning(
