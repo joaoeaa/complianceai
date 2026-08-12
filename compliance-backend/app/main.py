@@ -138,6 +138,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Sem isto o navegador esconde o cabeçalho do JavaScript em requisição de outra
+    # origem, e o front, que roda em domínio próprio, não consegue ler o nome do
+    # arquivo. O download cai num nome fixo e o navegador vai numerando: (1), (2).
+    expose_headers=["Content-Disposition"],
 )
 
 # ─── Rate Limiting ───

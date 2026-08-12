@@ -63,3 +63,23 @@ def test_aspas_no_nome_nao_quebram_o_cabecalho():
     """Aspas dentro de filename="..." encerrariam o campo antes da hora."""
     cabecalho = _cabecalho_download('Contrato "final".pdf')["Content-Disposition"]
     assert cabecalho.count('"') == 2
+
+
+def test_cors_expoe_o_cabecalho_do_nome():
+    """Sem expose_headers, o navegador esconde o nome do arquivo do JavaScript.
+
+    O front roda em domínio próprio e a API em outro, então todo download é
+    cross-origin. Sem esta configuração o `Content-Disposition` existe na resposta
+    mas o `fetch` não consegue lê-lo, e o arquivo é salvo com um nome fixo, que o
+    navegador vai numerando: relatorio (1).pdf, relatorio (2).pdf.
+    """
+    from app.main import app
+
+    cors = [
+        m for m in app.user_middleware
+        if "CORSMiddleware" in str(m.cls)
+    ]
+    assert cors, "CORSMiddleware não está registrado"
+
+    expostos = cors[0].kwargs.get("expose_headers") or []
+    assert "Content-Disposition" in expostos

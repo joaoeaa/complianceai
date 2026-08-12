@@ -242,11 +242,25 @@ class ApiClient {
       throw new Error(data?.detail || `Erro ${res.status}`);
     }
 
+    // O nome com acento viaja em filename* (RFC 5987) e filename= é a reserva em
+    // ascii. Ler o primeiro traz "Relatório - Contrato Locação.pdf" em vez de
+    // "Relatorio - Contrato Locacao.pdf". Depende de o servidor expor o cabeçalho
+    // em Access-Control-Expose-Headers, já que a API roda em outro domínio: sem
+    // isso o navegador esconde o cabeçalho e o download cai no nome de reserva.
     const disposition = res.headers.get("Content-Disposition");
     let filename = fallbackName;
     if (disposition) {
-      const match = disposition.match(/filename="?([^";\n]+)"?/);
-      if (match) filename = match[1];
+      const utf8 = disposition.match(/filename\*=UTF-8''([^;\n]+)/i);
+      if (utf8) {
+        try {
+          filename = decodeURIComponent(utf8[1]);
+        } catch {
+          filename = utf8[1];
+        }
+      } else {
+        const simples = disposition.match(/filename="?([^";\n]+)"?/i);
+        if (simples) filename = simples[1];
+      }
     }
 
     const blob = await res.blob();
