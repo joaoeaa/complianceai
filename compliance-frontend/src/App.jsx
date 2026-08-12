@@ -839,7 +839,7 @@ const DashboardPage = ({ onNavigate, onViewReport }) => {
 };
 
 // ── Upload ──
-const UploadPage = ({ onAnalyzeComplete, showToast }) => {
+const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true }) => {
   const [dragOver, setDragOver] = useState(false);
   const [file, setFile] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -936,6 +936,9 @@ const UploadPage = ({ onAnalyzeComplete, showToast }) => {
                   : "Sem cliente, o documento fica visível a toda a equipe."}
               </div>
             </div>
+          )}
+          {file && (
+            <RegrasDaAnalise showToast={showToast} scopeOrgId={scopeOrgId} canManage={canManage} />
           )}
           {file && <button onClick={startAnalysis} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 18, padding: "13px", borderRadius: 11, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontSize: 14, fontWeight: 700, fontFamily: F, boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}><Zap size={17} /> Iniciar Análise com IA</button>}
           <div className="upload-features" style={{ display: "grid", gap: 10, marginTop: 32 }}>
@@ -2308,6 +2311,141 @@ const AREA_ORDER = Object.keys(AREA_META);
 
 const areaLabel = (c) => AREA_META[c]?.label || "Outras";
 
+// Aviso de regras na Nova Análise.
+//
+// Nada na tela dizia contra o que o contrato ia ser avaliado. Quem não conhecia a
+// aba Regras subia um contrato de locação sem nenhuma regra de locação ligada e
+// recebia um relatório limpo, concluindo que o contrato estava bom. Falso
+// negativo silencioso é o pior resultado possível aqui.
+//
+// A caixa avisa antes do upload e deixa corrigir no lugar, porque mandar a pessoa
+// para outra tela no meio do fluxo é o mesmo que não avisar.
+const RegrasDaAnalise = ({ showToast, scopeOrgId, canManage = true }) => {
+  const [rules, setRules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [aberto, setAberto] = useState(false);
+  const [salvando, setSalvando] = useState(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      setRules((await api.listRules(false, scopeOrgId || null)) || []);
+    } catch {
+      setRules([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [scopeOrgId]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const grupos = useMemo(() => {
+    const mapa = new Map();
+    for (const regra of rules) {
+      const cat = regra.category || "geral";
+      if (!mapa.has(cat)) mapa.set(cat, []);
+      mapa.get(cat).push(regra);
+    }
+    return [...mapa.entries()].sort((a, b) => {
+      const ia = AREA_ORDER.indexOf(a[0]);
+      const ib = AREA_ORDER.indexOf(b[0]);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+  }, [rules]);
+
+  const ativas = rules.filter(r => r.is_active);
+  const areasAtivas = grupos.filter(([, g]) => g.some(r => r.is_active));
+  // Nenhuma regra ativa é o caso grave: a análise sairia vazia e pareceria aprovação.
+  const semRegras = ativas.length === 0;
+
+  const alternarArea = async (categoria, ativar) => {
+    setSalvando(categoria);
+    try {
+      const atualizadas = await api.toggleCategory(categoria, ativar, scopeOrgId || null);
+      const porId = new Map(atualizadas.map(r => [r.id, r]));
+      setRules(rules.map(r => porId.get(r.id) || r));
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSalvando(null);
+    }
+  };
+
+  if (loading || !rules.length) return null;
+
+  const tom = semRegras
+    ? { borda: "#fca5a5", fundo: "#fef2f2", icone: "#dc2626", titulo: "#991b1b" }
+    : { borda: "#fcd34d", fundo: "#fffbeb", icone: "#b45309", titulo: "#92400e" };
+
+  return (
+    <div style={{ marginTop: 16, border: `1px solid ${tom.borda}`, borderLeft: `3px solid ${tom.icone}`, borderRadius: 11, background: tom.fundo, overflow: "hidden", textAlign: "left" }}>
+      <div style={{ display: "flex", gap: 11, padding: "13px 15px" }}>
+        <AlertTriangle size={16} color={tom.icone} style={{ flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: tom.titulo, fontFamily: F }}>
+            {semRegras
+              ? "Nenhuma regra ativa: a análise não vai apontar nada"
+              : "Confira as regras antes de analisar"}
+          </div>
+          <p style={{ fontSize: 11.5, color: "#78350f", margin: "4px 0 0", lineHeight: 1.55, fontFamily: F }}>
+            {semRegras
+              ? "Sem regra ativa o relatório volta limpo, o que é fácil de confundir com um contrato em ordem. Ligue ao menos uma área abaixo."
+              : <>Este contrato será avaliado contra <strong>{ativas.length} {ativas.length === 1 ? "regra" : "regras"}</strong> de {areasAtivas.length} {areasAtivas.length === 1 ? "área" : "áreas"}: {areasAtivas.map(([c]) => areaLabel(c)).join(", ")}. Área desligada não gera apontamento, então se este for um contrato de locação, societário ou de propriedade industrial, ligue a área correspondente.</>}
+          </p>
+          <button
+            onClick={() => setAberto(!aberto)}
+            style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 9, padding: "5px 11px", borderRadius: 7, border: `1px solid ${tom.borda}`, background: "white", cursor: "pointer", fontSize: 11.5, fontWeight: 600, color: tom.titulo, fontFamily: F }}
+          >
+            {aberto ? <>Fechar <ChevronUp size={13} /></> : <>Ajustar as áreas <ChevronDown size={13} /></>}
+          </button>
+        </div>
+      </div>
+
+      {aberto && (
+        <div style={{ borderTop: `1px solid ${tom.borda}`, background: "white", padding: "12px 15px 14px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {grupos.map(([categoria, doGrupo]) => {
+              const nAtivas = doGrupo.filter(r => r.is_active).length;
+              const ligada = nAtivas > 0;
+              const meta = AREA_META[categoria];
+              return (
+                <div key={categoria} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, background: ligada ? "#f5f3ff" : "#f8fafc" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", fontFamily: F }}>
+                      {areaLabel(categoria)}
+                      <span style={{ fontSize: 10.5, fontWeight: 500, color: "#94a3b8", marginLeft: 7 }}>
+                        {nAtivas} de {doGrupo.length}
+                      </span>
+                    </div>
+                    {meta && (
+                      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1, fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {meta.hint}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => canManage && alternarArea(categoria, !ligada)}
+                    disabled={!canManage || salvando === categoria}
+                    title={canManage ? (ligada ? "Desligar esta área" : "Ligar esta área") : "Somente responsáveis pela equipe podem alterar"}
+                    style={{ background: "none", border: "none", cursor: canManage ? "pointer" : "default", padding: 2, opacity: canManage ? (salvando === categoria ? 0.5 : 1) : 0.4, flexShrink: 0 }}
+                  >
+                    {ligada ? <ToggleRight size={22} color="#6366f1" /> : <ToggleLeft size={22} color="#cbd5e1" />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <p style={{ fontSize: 10.5, color: "#94a3b8", margin: "10px 0 0", lineHeight: 1.5, fontFamily: F }}>
+            {canManage
+              ? "A escolha vale para o escopo atual e continua valendo nas próximas análises."
+              : "Você está no escopo de uma equipe. Só quem a administra altera estas regras."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const RulesManager = ({ showToast, organizationId = null, canManage = true, embedded = false }) => {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3098,7 +3236,7 @@ export default function ComplianceApp() {
   const renderPage = () => {
     switch (currentPage) {
       case "dashboard": return <DashboardPage onNavigate={navigate} onViewReport={viewReport} />;
-      case "upload": return <UploadPage onAnalyzeComplete={(id) => { viewReport(id); showToast("Análise concluída!", "success"); }} showToast={showToast} />;
+      case "upload": return <UploadPage onAnalyzeComplete={(id) => { viewReport(id); showToast("Análise concluída!", "success"); }} showToast={showToast} scopeOrgId={scopeOrgId} canManage={podeGerirEscopo} />;
       case "report": return <ReportPage docId={selectedDoc} onBack={() => navigate("history")} showToast={showToast} />;
       case "history": return <HistoryPage onViewReport={viewReport} showToast={showToast} />;
       case "legislation": return <LegislationPage showToast={showToast} />;
