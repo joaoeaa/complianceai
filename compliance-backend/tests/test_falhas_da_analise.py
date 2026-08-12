@@ -7,7 +7,11 @@ não diz sequer que o problema passa sozinho.
 """
 import pytest
 
-from app.workers.tasks import _ESPERA_PADRAO, _ESPERA_SOBRECARGA, _classificar_falha
+from app.services.analysis_errors import (
+    ESPERA_PADRAO,
+    ESPERA_SOBRECARGA,
+    classificar_falha,
+)
 
 
 class _Tentativa:
@@ -31,7 +35,7 @@ class _RetryError(Exception):
 def test_sobrecarga_do_provedor_e_reconhecida_dentro_do_retryerror():
     """A causa real vem embrulhada; sem desembrulhar, cai em desconhecida."""
     causa = Exception("Error code: 529 - {'type': 'overloaded_error'}")
-    categoria, mensagem, retentavel = _classificar_falha(_RetryError(causa))
+    categoria, mensagem, retentavel = classificar_falha(_RetryError(causa))
 
     assert categoria == "sobrecarga"
     assert retentavel is True
@@ -41,7 +45,7 @@ def test_sobrecarga_do_provedor_e_reconhecida_dentro_do_retryerror():
 
 def test_resposta_longa_nao_adianta_retentar():
     """Insistir num documento que estoura o teto só repete a falha."""
-    categoria, mensagem, retentavel = _classificar_falha(
+    categoria, mensagem, retentavel = classificar_falha(
         ValueError("A análise excedeu o limite de resposta do modelo (16384 tokens).")
     )
     assert categoria == "resposta_longa"
@@ -50,13 +54,13 @@ def test_resposta_longa_nao_adianta_retentar():
 
 
 def test_limite_de_uso_e_retentavel():
-    categoria, _, retentavel = _classificar_falha(Exception("Error code: 429 rate_limit"))
+    categoria, _, retentavel = classificar_falha(Exception("Error code: 429 rate_limit"))
     assert categoria == "limite_de_uso"
     assert retentavel is True
 
 
 def test_falha_desconhecida_nao_vaza_detalhe_tecnico():
-    _, mensagem, retentavel = _classificar_falha(
+    _, mensagem, retentavel = classificar_falha(
         RuntimeError("psycopg2.OperationalError: FATAL: sorry, too many clients")
     )
     assert retentavel is True
@@ -70,18 +74,18 @@ def test_falha_desconhecida_nao_vaza_detalhe_tecnico():
     Exception("OVERLOADED"),
 ])
 def test_variacoes_de_sobrecarga(exc):
-    assert _classificar_falha(exc)[0] == "sobrecarga"
+    assert classificar_falha(exc)[0] == "sobrecarga"
 
 
 def test_espera_da_sobrecarga_e_maior_que_a_padrao():
     """529 leva minutos para passar; o backoff antigo desistia em menos de um."""
-    assert min(_ESPERA_SOBRECARGA) > max(_ESPERA_PADRAO)
-    assert sum(_ESPERA_SOBRECARGA) >= 600
+    assert min(ESPERA_SOBRECARGA) > max(ESPERA_PADRAO)
+    assert sum(ESPERA_SOBRECARGA) >= 600
 
 
 def test_mensagens_sao_em_portugues_e_sem_jargao():
     for exc in (Exception("529"), Exception("429"), RuntimeError("boom")):
-        _, mensagem, _ = _classificar_falha(exc)
+        _, mensagem, _ = classificar_falha(exc)
         assert mensagem[0].isupper()
         for proibido in ("Traceback", "Exception", "Error code", "0x"):
             assert proibido not in mensagem

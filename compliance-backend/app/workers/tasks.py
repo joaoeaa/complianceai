@@ -16,6 +16,11 @@ from sqlalchemy import create_engine, select, func, case as sa_case
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.services.analysis_errors import (
+    ESPERA_PADRAO,
+    ESPERA_SOBRECARGA,
+    classificar_falha,
+)
 from app.services.feedback_learning import load_feedback_learnings
 
 settings = get_settings()
@@ -46,60 +51,6 @@ celery_app.conf.update(
 
 # Sync engine for Celery (Celery doesn't support asyncio natively)
 sync_engine = create_engine(settings.DATABASE_URL_SYNC, pool_pre_ping=True)
-
-
-# Sobrecarga do provedor de IA (HTTP 529) passa sozinha, mas leva minutos, e não
-# os segundos que o backoff anterior esperava. Vale mais tentativa e espera maior
-# nesse caso do que num erro que não vai se resolver por insistência.
-_ESPERA_SOBRECARGA = (60, 180, 420)  # segundos
-_ESPERA_PADRAO = (10, 20)
-
-
-def _classificar_falha(exc: Exception) -> tuple[str, str, bool]:
-    """Devolve (categoria, mensagem para o usuário, vale retentar).
-
-    A mensagem sai daqui em português e sem jargão porque é ela que chega à tela.
-    Antes o usuário via "RetryError[<Future at 0x7f02 state=finished raised
-    InternalServerError>]", que não diz nem que o problema é temporário.
-    """
-    texto = str(exc)
-    causa = getattr(exc, "last_attempt", None)
-    if causa is not None and causa.failed:
-        texto = f"{texto} {causa.exception()}"
-
-    if "529" in texto or "overloaded" in texto.lower():
-        return (
-            "sobrecarga",
-            "O serviço de IA está sobrecarregado no momento. "
-            "A análise será refeita automaticamente em alguns minutos.",
-            True,
-        )
-    if "limite de resposta" in texto:
-        return (
-            "resposta_longa",
-            "O documento gerou uma resposta maior do que o limite do modelo. "
-            "Divida o documento ou reduza o número de regras ativas.",
-            False,
-        )
-    if "não é JSON válido" in texto or "JSON" in texto:
-        return (
-            "resposta_invalida",
-            "A IA devolveu uma resposta fora do formato esperado. "
-            "Tente novamente; se persistir, avise o suporte.",
-            True,
-        )
-    if "rate_limit" in texto.lower() or "429" in texto:
-        return (
-            "limite_de_uso",
-            "Limite de uso da IA atingido. A análise será refeita em instantes.",
-            True,
-        )
-    return (
-        "desconhecida",
-        "Tivemos um problema técnico ao analisar este documento. "
-        "Tente novamente em alguns minutos.",
-        True,
-    )
 
 
 @celery_app.task(bind=True, name="analyze_document_task", max_retries=3)
@@ -259,7 +210,7 @@ def analyze_document_task(self, document_id: str):
             }
 
         except Exception as e:
-            categoria, mensagem, retentavel = _classificar_falha(e)
+            categoria, mensagem, retentavel = classificar_falha(e)
             tentativa = self.request.retries
             vai_retentar = retentavel and tentativa < self.max_retries
 
@@ -283,7 +234,7 @@ def analyze_document_task(self, document_id: str):
 
             if vai_retentar:
                 espera = (
-                    _ESPERA_SOBRECARGA if categoria == "sobrecarga" else _ESPERA_PADRAO
+                    ESPERA_SOBRECARGA if categoria == "sobrecarga" else ESPERA_PADRAO
                 )
                 segundos = espera[min(tentativa, len(espera) - 1)]
                 logger.info(
