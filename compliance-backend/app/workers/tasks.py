@@ -189,6 +189,7 @@ def analyze_document_task(self, document_id: str):
                 completion_tokens=result.completion_tokens,
                 model=settings.ANTHROPIC_MODEL,
                 prompt_version=PROMPT_VERSION,
+                duration_ms=result.duration_ms,
             )
             db.add(analysis)
             doc.status = "analyzed"

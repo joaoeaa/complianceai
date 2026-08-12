@@ -9,6 +9,7 @@ This is the core intelligence of the system:
 """
 import json
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -30,6 +31,10 @@ class AnalysisResult:
     missing_clauses: List[str]
     prompt_tokens: int
     completion_tokens: int
+    # Duracao da chamada ao modelo. E onde esta praticamente todo o tempo de
+    # espera, e sem gravar nao da para comparar uma mudanca de prompt ou de
+    # modelo depois que o log rotaciona.
+    duration_ms: int = 0
 
 
 # ─── Prompt Template ───
@@ -331,6 +336,7 @@ def analyze_document(
         feedback_learnings=feedback_learnings,
     )
 
+    inicio = time.monotonic()
     logger.info(f"Enviando análise para Claude ({settings.ANTHROPIC_MODEL})...")
     logger.debug(f"Prompt: {len(user_prompt)} caracteres, {len(rules)} regras")
 
@@ -370,4 +376,5 @@ def analyze_document(
         missing_clauses=parsed.get("missing_clauses", []),
         prompt_tokens=response.usage.input_tokens,
         completion_tokens=response.usage.output_tokens,
+        duration_ms=int((time.monotonic() - inicio) * 1000),
     )

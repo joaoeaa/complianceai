@@ -196,6 +196,10 @@ class Analysis(Base):
     # e da mesma versao do prompt. Sem isto nao ha como auditar uma mudanca.
     model = Column(String(64), nullable=True)
     prompt_version = Column(String(16), nullable=True)
+    # Duracao da chamada ao modelo, em milissegundos. Sem gravar, comparar uma
+    # mudanca de prompt ou de modelo depende de ler log, que rotaciona: a medicao
+    # so existe enquanto ninguem precisa dela.
+    duration_ms = Column(Integer, nullable=True)
     analyzed_at = Column(DateTime(timezone=True), default=utcnow)
 
     document = relationship("Document", back_populates="analysis")

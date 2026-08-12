@@ -75,10 +75,14 @@ async def list_legislation(
     current_user: User = Depends(get_current_user),
 ):
     """List all indexed legislation with chunk counts."""
+    # Duas contagens diferentes, e confundi-las gerava numeros divergentes na
+    # interface: um artigo longo e fatiado em varios trechos, entao somar trechos
+    # e chamar de "artigos" inflava o numero.
     query = (
         select(
             LegalDocument,
             func.count(LegalChunk.id).label("chunk_count"),
+            func.count(func.distinct(LegalChunk.article_ref)).label("article_count"),
         )
         .outerjoin(LegalChunk, LegalChunk.document_id == LegalDocument.id)
         .group_by(LegalDocument.id)
@@ -99,8 +103,9 @@ async def list_legislation(
             category=doc.category,
             created_at=doc.created_at,
             chunk_count=count,
+            article_count=artigos,
         )
-        for doc, count in rows
+        for doc, count, artigos in rows
     ]
 
 

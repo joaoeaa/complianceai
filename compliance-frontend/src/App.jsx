@@ -1783,7 +1783,7 @@ const LegislationPage = ({ showToast }) => {
         </div>
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 16px", display: "flex", alignItems: "center", gap: 8 }}>
           <Hash size={16} color="#8b5cf6" />
-          <span style={{ fontSize: 12, color: "#64748b", fontFamily: F }}><strong style={{ color: "#0f172a" }}>{laws.reduce((s, l) => s + (l.chunk_count || 0), 0)}</strong> artigos indexados</span>
+          <span style={{ fontSize: 12, color: "#64748b", fontFamily: F }}><strong style={{ color: "#0f172a" }}>{laws.reduce((s, l) => s + (l.article_count || 0), 0).toLocaleString("pt-BR")}</strong> artigos indexados</span>
         </div>
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 16px", display: "flex", alignItems: "center", gap: 8 }}>
           <Filter size={16} color="#f59e0b" />
@@ -1810,7 +1810,7 @@ const LegislationPage = ({ showToast }) => {
                     <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 8px", fontFamily: F }}>{law.source}</p>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 10, fontWeight: 600, color: meta.color, background: `${meta.color}12`, padding: "2px 8px", borderRadius: 20, fontFamily: F }}>{meta.label}</span>
-                      <span style={{ fontSize: 10, color: "#94a3b8", fontFamily: F, display: "flex", alignItems: "center", gap: 3 }}><Hash size={10} />{law.chunk_count} artigos</span>
+                      <span style={{ fontSize: 10, color: "#94a3b8", fontFamily: F, display: "flex", alignItems: "center", gap: 3 }}><Hash size={10} />{law.article_count} artigos</span>
                     </div>
                   </div>
                   <ChevronRight size={16} color="#c7d2fe" style={{ flexShrink: 0, marginTop: 4 }} />

@@ -208,7 +208,8 @@ class LegislationResponse(BaseModel):
     source: str
     category: str
     created_at: datetime
-    chunk_count: int = 0
+    chunk_count: int = 0        # trechos indexados: um artigo longo vira vários
+    article_count: int = 0      # artigos distintos, que é o que se conta como lei
 
 
 class LegislationDetailResponse(BaseModel):
