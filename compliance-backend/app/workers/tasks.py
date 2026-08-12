@@ -48,7 +48,61 @@ celery_app.conf.update(
 sync_engine = create_engine(settings.DATABASE_URL_SYNC, pool_pre_ping=True)
 
 
-@celery_app.task(bind=True, name="analyze_document_task", max_retries=2)
+# Sobrecarga do provedor de IA (HTTP 529) passa sozinha, mas leva minutos, e não
+# os segundos que o backoff anterior esperava. Vale mais tentativa e espera maior
+# nesse caso do que num erro que não vai se resolver por insistência.
+_ESPERA_SOBRECARGA = (60, 180, 420)  # segundos
+_ESPERA_PADRAO = (10, 20)
+
+
+def _classificar_falha(exc: Exception) -> tuple[str, str, bool]:
+    """Devolve (categoria, mensagem para o usuário, vale retentar).
+
+    A mensagem sai daqui em português e sem jargão porque é ela que chega à tela.
+    Antes o usuário via "RetryError[<Future at 0x7f02 state=finished raised
+    InternalServerError>]", que não diz nem que o problema é temporário.
+    """
+    texto = str(exc)
+    causa = getattr(exc, "last_attempt", None)
+    if causa is not None and causa.failed:
+        texto = f"{texto} {causa.exception()}"
+
+    if "529" in texto or "overloaded" in texto.lower():
+        return (
+            "sobrecarga",
+            "O serviço de IA está sobrecarregado no momento. "
+            "A análise será refeita automaticamente em alguns minutos.",
+            True,
+        )
+    if "limite de resposta" in texto:
+        return (
+            "resposta_longa",
+            "O documento gerou uma resposta maior do que o limite do modelo. "
+            "Divida o documento ou reduza o número de regras ativas.",
+            False,
+        )
+    if "não é JSON válido" in texto or "JSON" in texto:
+        return (
+            "resposta_invalida",
+            "A IA devolveu uma resposta fora do formato esperado. "
+            "Tente novamente; se persistir, avise o suporte.",
+            True,
+        )
+    if "rate_limit" in texto.lower() or "429" in texto:
+        return (
+            "limite_de_uso",
+            "Limite de uso da IA atingido. A análise será refeita em instantes.",
+            True,
+        )
+    return (
+        "desconhecida",
+        "Tivemos um problema técnico ao analisar este documento. "
+        "Tente novamente em alguns minutos.",
+        True,
+    )
+
+
+@celery_app.task(bind=True, name="analyze_document_task", max_retries=3)
 def analyze_document_task(self, document_id: str):
     """
     Main Celery task: extract text → fetch rules → load feedback → analyze with AI → save results.
@@ -205,20 +259,37 @@ def analyze_document_task(self, document_id: str):
             }
 
         except Exception as e:
-            logger.error(f"❌ Erro na análise do documento {document_id}: {e}", exc_info=True)
+            categoria, mensagem, retentavel = _classificar_falha(e)
+            tentativa = self.request.retries
+            vai_retentar = retentavel and tentativa < self.max_retries
 
-            # Update document status to error
+            logger.error(
+                "Erro na análise do documento %s [%s]: %s",
+                document_id, categoria, e, exc_info=not vai_retentar,
+            )
+
+            # Só marca erro quando não há mais tentativa pela frente. Marcar antes
+            # fazia a tela dizer "Erro na análise" para um documento que ainda seria
+            # reprocessado, e depois voltar sozinho para analisado.
             try:
-                doc = db.execute(select(Document).where(Document.id == document_id)).scalar_one_or_none()
+                doc = db.execute(
+                    select(Document).where(Document.id == document_id)
+                ).scalar_one_or_none()
                 if doc:
-                    doc.status = "error"
+                    doc.status = "processing" if vai_retentar else "error"
                     db.commit()
             except Exception:
-                pass
+                db.rollback()
 
-            # Retry if attempts remain
-            if self.request.retries < self.max_retries:
-                logger.info(f"Retentando ({self.request.retries + 1}/{self.max_retries})...")
-                raise self.retry(exc=e, countdown=10 * (self.request.retries + 1))
+            if vai_retentar:
+                espera = (
+                    _ESPERA_SOBRECARGA if categoria == "sobrecarga" else _ESPERA_PADRAO
+                )
+                segundos = espera[min(tentativa, len(espera) - 1)]
+                logger.info(
+                    "Retentando em %ds (%d/%d), motivo: %s",
+                    segundos, tentativa + 1, self.max_retries, categoria,
+                )
+                raise self.retry(exc=e, countdown=segundos)
 
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "category": categoria, "message": mensagem}
