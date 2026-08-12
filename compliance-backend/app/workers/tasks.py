@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, select, func, case as sa_case
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.services.feedback_learning import load_feedback_learnings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -42,55 +43,6 @@ celery_app.conf.update(
 
 # Sync engine for Celery (Celery doesn't support asyncio natively)
 sync_engine = create_engine(settings.DATABASE_URL_SYNC, pool_pre_ping=True)
-
-
-def _load_feedback_learnings(db: Session) -> list:
-    """Load aggregated feedback learnings from AlertFeedback table.
-    Returns list of dicts with: rule_name, total, correct, incorrect, false_positive_rate, sample_comments"""
-    from app import AlertFeedback
-
-    result = db.execute(
-        select(
-            AlertFeedback.rule_name,
-            func.count(AlertFeedback.id).label("total"),
-            func.sum(sa_case((AlertFeedback.is_correct == True, 1), else_=0)).label("correct"),
-            func.sum(sa_case((AlertFeedback.is_correct == False, 1), else_=0)).label("incorrect"),
-        )
-        .group_by(AlertFeedback.rule_name)
-        .having(func.count(AlertFeedback.id) >= 1)
-    )
-
-    learnings = []
-    for row in result.all():
-        rule_name, total, correct, incorrect = row
-        correct = int(correct or 0)
-        incorrect = int(incorrect or 0)
-        fp_rate = round((incorrect / total) * 100, 1) if total > 0 else 0.0
-
-        # Fetch sample comments from false positives
-        comments_result = db.execute(
-            select(AlertFeedback.comment)
-            .where(
-                AlertFeedback.rule_name == rule_name,
-                AlertFeedback.is_correct == False,
-                AlertFeedback.comment.isnot(None),
-                AlertFeedback.comment != "",
-            )
-            .order_by(AlertFeedback.created_at.desc())
-            .limit(3)
-        )
-        sample_comments = [c for (c,) in comments_result.all() if c]
-
-        learnings.append({
-            "rule_name": rule_name,
-            "total": total,
-            "correct": correct,
-            "incorrect": incorrect,
-            "false_positive_rate": fp_rate,
-            "sample_comments": sample_comments,
-        })
-
-    return learnings
 
 
 @celery_app.task(bind=True, name="analyze_document_task", max_retries=2)
@@ -171,7 +123,7 @@ def analyze_document_task(self, document_id: str):
             self.update_state(state="PROGRESS", meta={"stage": "loading_feedback", "progress": 50})
             feedback_learnings = []
             try:
-                feedback_learnings = _load_feedback_learnings(db)
+                feedback_learnings = load_feedback_learnings(db, doc)
                 if feedback_learnings:
                     logger.info(f"Feedback learnings carregados: {len(feedback_learnings)} regras com feedback")
             except Exception as fb_err:
