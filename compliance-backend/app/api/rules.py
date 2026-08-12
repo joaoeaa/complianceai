@@ -158,6 +158,42 @@ async def delete_rule(
     await db.delete(rule)
 
 
+@router.post("/restaurar-padrao", response_model=List[RuleResponse])
+async def restore_defaults(
+    organization_id: Optional[uuid.UUID] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Devolve as regras globais ao estado padrão neste escopo.
+
+    O padrão de cada regra global vive nela mesma, em `is_active`. O que um escopo
+    liga ou desliga vira uma linha em `rule_overrides`. Restaurar, então, é apagar
+    os overrides deste escopo: nada precisa saber de cor quais eram as 14 ativas,
+    e a lista continua correta se o conjunto canônico mudar depois.
+
+    Regras próprias, do usuário ou da equipe, não são tocadas: elas não têm padrão
+    de sistema para o qual voltar.
+    """
+    if organization_id is not None:
+        await _require_org_membership(organization_id, current_user, db, must_manage=True)
+
+    overrides = (
+        await db.execute(
+            overrides_query(user_id=current_user.id, organization_id=organization_id)
+        )
+    ).scalars().all()
+    for override in overrides:
+        await db.delete(override)
+    await db.flush()
+
+    regras = (
+        await db.execute(
+            visible_rules_query(user_id=current_user.id, organization_id=organization_id)
+        )
+    ).scalars().all()
+    return apply_overrides(regras, [])
+
+
 @router.patch("/categoria/{category}", response_model=List[RuleResponse])
 async def toggle_category(
     category: str,

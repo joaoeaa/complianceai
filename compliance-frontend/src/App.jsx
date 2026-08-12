@@ -305,6 +305,11 @@ class ApiClient {
     return this.request(`/rules/${id}`, { method: "DELETE" });
   }
 
+  async restoreDefaultRules(organizationId = null) {
+    const qs = organizationId ? `?organization_id=${organizationId}` : "";
+    return this.request(`/rules/restaurar-padrao${qs}`, { method: "POST" });
+  }
+
   async toggleCategory(category, isActive, organizationId = null) {
     const qs = organizationId ? `?organization_id=${organizationId}` : "";
     return this.request(`/rules/categoria/${encodeURIComponent(category)}${qs}`, {
@@ -2521,6 +2526,26 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
     });
   }, [rules]);
 
+  const [restaurando, setRestaurando] = useState(false);
+  const [confirmaRestauro, setConfirmaRestauro] = useState(false);
+
+  // Ninguem deveria decorar quais areas vinham ligadas de fabrica so para
+  // desfazer um ajuste feito para revisar um contrato especifico.
+  const restaurarPadrao = async () => {
+    setRestaurando(true);
+    try {
+      const atualizadas = await api.restoreDefaultRules(organizationId);
+      setRules(atualizadas || []);
+      setConfirmaRestauro(false);
+      const ativas = (atualizadas || []).filter(r => r.is_active).length;
+      showToast(`Padrão restaurado: ${ativas} regras ativas`, "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setRestaurando(false);
+    }
+  };
+
   const toggleArea = async (categoria, ativar) => {
     setAreaSalvando(categoria);
     try {
@@ -2576,6 +2601,11 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
         </div>
         {canManage && (
           <button onClick={() => showForm ? setShowForm(false) : openNew()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 12, background: showForm ? "#f1f5f9" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: showForm ? "#64748b" : "white", fontFamily: F }}>{showForm ? <><X size={15} /> Cancelar</> : <><Plus size={15} /> Nova Regra</>}</button>
+        )}
+        {canManage && !showForm && (
+          <button onClick={() => setConfirmaRestauro(true)} disabled={restaurando} style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontWeight: 600, fontSize: 12, color: "#64748b", fontFamily: F, opacity: restaurando ? 0.6 : 1 }} title="Voltar as regras padrão ao estado de fábrica neste escopo">
+            <RefreshCw size={14} /> Restaurar padrão
+          </button>
         )}
       </div>
       {!introDismissed && !showForm && (
@@ -2650,6 +2680,24 @@ const RulesManager = ({ showToast, organizationId = null, canManage = true, embe
         );
         })}
       </div>
+      <Modal open={confirmaRestauro} onClose={() => setConfirmaRestauro(false)} title="Restaurar padrão" width={420}>
+        <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 8px", fontFamily: F }}>
+          Voltar as regras padrão ao estado de fábrica neste escopo?
+        </p>
+        <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 16px", fontFamily: F, lineHeight: 1.6 }}>
+          Desfaz o que você ligou ou desligou nas regras do sistema, incluindo áreas
+          ativadas para revisar um contrato específico. As regras que você mesmo criou
+          não são alteradas nem removidas.
+        </p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={() => setConfirmaRestauro(false)} style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#64748b", fontFamily: F }}>Cancelar</button>
+          <button onClick={restaurarPadrao} disabled={restaurando} style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "white", fontFamily: F, display: "flex", alignItems: "center", gap: 6 }}>
+            {restaurando && <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />}
+            Restaurar
+          </button>
+        </div>
+      </Modal>
+
       <Modal open={!!delC} onClose={() => setDelC(null)} title="Excluir regra" width={380}>
         <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 16px", fontFamily: F }}>Tem certeza? A regra será removida permanentemente.</p>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
