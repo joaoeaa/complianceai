@@ -468,3 +468,34 @@ class TestRespostaTruncada:
 
         assert resultado.summary == "ok"
         assert resultado.risk_score == 10
+
+
+class TestConcisao:
+    """O tempo de espera é proporcional ao que o modelo gera.
+
+    Uma análise medida em produção levou 34s, dos quais 33 foram só geração. Sem
+    limite declarado, o modelo escrevia parágrafos em campos que pedem uma frase,
+    e um estatuto social chegou a estourar o teto de saída inteiro.
+    """
+
+    def test_prompt_declara_limite_para_cada_campo(self):
+        from app.services.ai_analyzer import _build_user_prompt
+
+        prompt = _build_user_prompt("CONTRATO", [], [], None)
+        assert "TAMANHO DA RESPOSTA" in prompt
+        for campo in ('"summary"', '"issue"', '"suggestion"', '"excerpt"'):
+            assert campo in prompt.split("TAMANHO DA RESPOSTA")[1]
+
+    def test_prompt_evita_duplicar_o_que_o_sistema_ja_anexa(self):
+        """O texto da lei entra pelo verificador, não pela geração."""
+        from app.services.ai_analyzer import _build_user_prompt
+
+        trecho = _build_user_prompt("CONTRATO", [], [], None).split("TAMANHO DA RESPOSTA")[1]
+        assert "texto da lei" in trecho
+        assert "já aparece" in trecho
+
+    def test_versao_do_prompt_acompanha_a_mudanca(self):
+        """Sem incremento, não dá para comparar análises antes e depois."""
+        from app.services.ai_analyzer import PROMPT_VERSION
+
+        assert int(PROMPT_VERSION) >= 3

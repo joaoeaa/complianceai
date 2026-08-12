@@ -42,7 +42,10 @@ class AnalysisResult:
 #   1  redação inicial
 #   2  corrige o exemplo de JSON, que estava malformado, e passa a exigir
 #      explicitamente cópia literal no excerpt e null em vez de citação inventada
-PROMPT_VERSION = "2"
+#   3  limita o tamanho de summary, issue, suggestion e excerpt. O tempo de
+#      espera é proporcional ao que o modelo gera, e a verbosidade não tornava
+#      o apontamento mais correto
+PROMPT_VERSION = "3"
 
 SYSTEM_PROMPT = """Você é um assistente especializado em análise de contratos e documentos legais.
 
@@ -200,6 +203,22 @@ EXIGÊNCIAS SOBRE OS DOIS CAMPOS QUE SÃO CONFERIDOS DEPOIS:
    listados em BASE LEGAL RELEVANTE, citando o artigo no formato "Art. N, Lei".
    Se nenhum dispositivo sustentar o alerta, use null: um alerta sem base legal
    é melhor do que um alerta com base legal inexistente.
+
+TAMANHO DA RESPOSTA:
+
+Escreva de forma direta. O tempo de espera do usuário é proporcional ao tamanho
+do que você gera, e texto longo não torna o apontamento mais correto.
+
+- "summary": no máximo 3 frases.
+- "issue": 1 a 2 frases dizendo qual é o problema. Sem repetir o trecho citado,
+  que já aparece em "excerpt", e sem reproduzir o texto da lei, que o sistema
+  anexa depois a partir da base legal.
+- "suggestion": 1 frase com a ação concreta. "Suprimir o parágrafo único da
+  cláusula quinta" em vez de um parágrafo explicando por quê.
+- "excerpt": só o trecho necessário para identificar a cláusula. Se ela for
+  longa, cite o começo, use [...] e cite o fim.
+
+Não repita, entre um alerta e outro, a explicação de um mesmo dispositivo legal.
 
 REGRAS CONFIGURADAS PARA REFERÊNCIA DE NOMES: {json.dumps(rule_names, ensure_ascii=False)}
 """
