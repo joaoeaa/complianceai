@@ -535,16 +535,48 @@ async def download_report(
 
     # 4) Preparar dados para geração
     doc_dict = {"filename": document.filename}
+
+    # As marcações do revisor são por pessoa: o PDF sai com as de quem o exporta,
+    # porque é o relatório da revisão dele, não uma média das opiniões da equipe.
+    from app.models import AlertFeedback
+
+    alertas = list(analysis.alerts or [])
+    marcacoes = {
+        m.alert_index: m
+        for m in (
+            await db.execute(
+                select(AlertFeedback).where(
+                    AlertFeedback.analysis_id == analysis.id,
+                    AlertFeedback.user_id == current_user.id,
+                )
+            )
+        ).scalars().all()
+    }
+    for i, alerta in enumerate(alertas):
+        marcacao = marcacoes.get(i)
+        if marcacao and marcacao.resolution:
+            alerta = {**alerta,
+                      "resolution": marcacao.resolution,
+                      "resolution_comment": marcacao.comment}
+            alertas[i] = alerta
+
     analysis_dict = {
         "risk_score": analysis.risk_score,
         "summary": analysis.summary,
-        "alerts": analysis.alerts or [],
+        "alerts": alertas,
         "missing_clauses": analysis.missing_clauses or [],
+        # Rastreabilidade: sem isto não dá para saber qual redação de prompt e qual
+        # modelo produziram um relatório emitido meses atrás.
+        "model": analysis.model,
+        "prompt_version": analysis.prompt_version,
     }
 
     # 5) Gerar HTML e converter para PDF
     try:
-        html_content = generate_html_report(doc_dict, analysis_dict, rules)
+        html_content = generate_html_report(
+            doc_dict, analysis_dict, rules,
+            generated_by=current_user.full_name or current_user.email,
+        )
         pdf_bytes = generate_pdf_report(html_content)
 
         # sanitizar filename para o header
