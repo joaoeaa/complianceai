@@ -37,8 +37,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    task_soft_time_limit=150,  # seconds
-    task_time_limit=180,
+    # A geração cresce com o tamanho do contrato e o número de alertas. Com o teto
+    # de saída em 16k, uma análise longa passa dos 150s antigos, e o worker matava
+    # a tarefa no meio.
+    task_soft_time_limit=420,  # seconds
+    task_time_limit=480,
 )
 
 # Sync engine for Celery (Celery doesn't support asyncio natively)

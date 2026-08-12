@@ -332,6 +332,16 @@ def analyze_document(
         raise ValueError("A resposta do modelo não trouxe nenhum bloco de texto")
     logger.info(f"Resposta recebida: {response.usage.input_tokens} input, {response.usage.output_tokens} output tokens")
 
+    # Resposta cortada no teto de saída chega aqui como JSON truncado, e o erro que
+    # aparecia era "JSON inválido", que aponta para o lugar errado. O motivo real
+    # está no stop_reason.
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        raise ValueError(
+            "A análise excedeu o limite de resposta do modelo "
+            f"({settings.ANTHROPIC_MAX_TOKENS} tokens). O documento é longo demais "
+            "ou gerou alertas demais. Aumente ANTHROPIC_MAX_TOKENS ou divida o documento."
+        )
+
     parsed = _parse_llm_response(raw_text)
 
     return AnalysisResult(

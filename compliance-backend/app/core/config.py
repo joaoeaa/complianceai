@@ -32,8 +32,11 @@ class Settings(BaseSettings):
     # ─── Anthropic ───
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-5"
-    ANTHROPIC_MAX_TOKENS: int = 8192
-    ANTHROPIC_TIMEOUT: int = 120
+    # Teto de saída. Um contrato longo com muitos alertas passava de 8192, e a
+    # resposta vinha cortada no meio de uma string, o que só aparecia depois como
+    # "JSON inválido". O modelo suporta bem mais do que isto.
+    ANTHROPIC_MAX_TOKENS: int = 16384
+    ANTHROPIC_TIMEOUT: int = 300
 
     # ─── OpenAI (Embeddings) ───
     OPENAI_API_KEY: str = ""

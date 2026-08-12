@@ -62,6 +62,7 @@ def _mock_anthropic_response(raw_text: str, input_tokens: int = 500, output_toke
     response = MagicMock()
     response.content = [content_block]
     response.usage = usage
+    response.stop_reason = "end_turn"
     return response
 
 
@@ -403,3 +404,67 @@ def test_prompt_exige_copia_literal_no_excerpt():
     prompt = _build_user_prompt("CONTRATO", [], [], None)
     assert "cópia literal" in prompt
     assert "[...]" in prompt
+
+
+class TestRespostaTruncada:
+    """Resposta cortada no teto de saída precisa dizer que foi cortada.
+
+    Foi assim que um estatuto social quebrou em produção: a geração bateu exatos
+    8192 tokens, o JSON veio partido no meio de uma string, e o erro registrado
+    foi "JSON inválido", que manda investigar o parser em vez do limite. O
+    diagnóstico custou mais do que a correção.
+    """
+
+    def test_truncamento_e_reportado_como_tal(self):
+        from unittest.mock import patch
+
+        from app.services.ai_analyzer import analyze_document
+
+        resposta = _mock_anthropic_response('{\n  "summary": "come')
+        resposta.stop_reason = "max_tokens"
+
+        cliente = MagicMock()
+        cliente.messages.create.return_value = resposta
+
+        settings_mock = MagicMock()
+        settings_mock.ANTHROPIC_API_KEY = "sk-ant-valida"
+        settings_mock.ANTHROPIC_MODEL = "claude-sonnet-5"
+        settings_mock.ANTHROPIC_MAX_TOKENS = 16384
+        settings_mock.ANTHROPIC_TIMEOUT = 300
+
+        with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
+             patch("app.services.ai_analyzer.settings", settings_mock):
+            with pytest.raises(ValueError) as erro:
+                analyze_document("texto do contrato", [])
+
+        mensagem = str(erro.value)
+        assert "limite de resposta" in mensagem
+        assert "16384" in mensagem
+        assert "JSON" not in mensagem
+
+    def test_resposta_completa_nao_dispara_o_aviso(self):
+        from unittest.mock import patch
+
+        from app.services.ai_analyzer import analyze_document
+
+        valido = (
+            '{"summary": "ok", "risk_score": 10, "alerts": [], "missing_clauses": []}'
+        )
+        resposta = _mock_anthropic_response(valido)
+        resposta.stop_reason = "end_turn"
+
+        cliente = MagicMock()
+        cliente.messages.create.return_value = resposta
+
+        settings_mock = MagicMock()
+        settings_mock.ANTHROPIC_API_KEY = "sk-ant-valida"
+        settings_mock.ANTHROPIC_MODEL = "claude-sonnet-5"
+        settings_mock.ANTHROPIC_MAX_TOKENS = 16384
+        settings_mock.ANTHROPIC_TIMEOUT = 300
+
+        with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
+             patch("app.services.ai_analyzer.settings", settings_mock):
+            resultado = analyze_document("texto do contrato", [])
+
+        assert resultado.summary == "ok"
+        assert resultado.risk_score == 10

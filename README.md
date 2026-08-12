@@ -279,7 +279,7 @@ celery -A app.workers.tasks.celery_app worker --loglevel=info
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Chave da API Anthropic | **obrigatório** |
 | `ANTHROPIC_MODEL` | Modelo usado na análise | `claude-sonnet-5` |
-| `ANTHROPIC_MAX_TOKENS` | Teto de thinking + resposta | `8192` |
+| `ANTHROPIC_MAX_TOKENS` | Teto da resposta do modelo | `16384` |
 | `OPENAI_API_KEY` | Chave da API OpenAI (embeddings) | **obrigatório** |
 | `OPENAI_EMBEDDING_MODEL` | Modelo de embedding | `text-embedding-3-small` |
 | `DATABASE_URL` | Conexão PostgreSQL (async) | `localhost:5432` |
