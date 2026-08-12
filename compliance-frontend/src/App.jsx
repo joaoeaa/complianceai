@@ -10,6 +10,7 @@ import {
   ThumbsUp, ThumbsDown, Star, MessageSquare, Send, Check,
   Briefcase, Archive, History, ShieldCheck
 } from "lucide-react";
+import LandingPage from "./LandingPage";
 
 // ── API Configuration ──
 // Em produção, defina VITE_API_URL (ex.: https://api.seudominio.com)
@@ -451,8 +452,8 @@ const RiskGauge = ({ score, size = 140 }) => {
 };
 
 // ── Login / Register Page ──
-const LoginPage = ({ onLogin }) => {
-  const [mode, setMode] = useState("login"); // "login" | "register"
+const LoginPage = ({ onLogin, initialMode = "login", onVoltar }) => {
+  const [mode, setMode] = useState(initialMode); // "login" | "register"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -517,6 +518,11 @@ const LoginPage = ({ onLogin }) => {
         </div>
       </div>
       <div style={{ width: "clamp(340px,40vw,480px)", display: "flex", flexDirection: "column", justifyContent: "center", padding: "48px clamp(24px,4vw,56px)", background: "white" }}>
+        {onVoltar && (
+          <button onClick={onVoltar} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", color: "#64748b", fontSize: 12.5, fontWeight: 600, fontFamily: F, padding: 0, marginBottom: 18 }}>
+            <ArrowLeft size={14} /> Voltar
+          </button>
+        )}
         <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.03em", margin: "0 0 4px" }}>{isLogin ? "Bem-vindo de volta" : "Criar nova conta"}</h2>
         <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 28px" }}>{isLogin ? "Faça login para acessar a plataforma" : "Preencha os dados para se registrar"}</p>
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626", fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}><AlertTriangle size={15} />{error}</div>}
@@ -2899,6 +2905,16 @@ const ScopeSwitcher = ({ scopeOrgId, orgs, onChange, isMobile }) => {
 export default function ComplianceApp() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
+  // Area publica: a landing e a porta de entrada, e o formulario de senha so
+  // aparece a pedido. Quem chega por indicacao precisa saber o que e a
+  // ferramenta antes de decidir criar conta. O hash permite mandar alguem
+  // direto para o login (complianceai.app/#entrar).
+  const [authView, setAuthView] = useState(() => {
+    const h = typeof window !== "undefined" ? window.location.hash : "";
+    if (h === "#entrar") return "login";
+    if (h === "#criar-conta") return "register";
+    return "landing";
+  });
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -2977,7 +2993,28 @@ export default function ComplianceApp() {
   }, [showToast]);
 
   if (checkingAuth) return (<div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f6fa", fontFamily: F }}><Loader2 size={28} color="#6366f1" style={{ animation: "spin 1s linear infinite" }} /></div>);
-  if (!loggedIn) return (<><style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap'); * { box-sizing: border-box; margin: 0; padding: 0; } @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } input:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }`}</style><LoginPage onLogin={u => { setUser(u); setLoggedIn(true); }} /></>);
+  if (!loggedIn) {
+    const estiloPublico = (
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap'); * { box-sizing: border-box; margin: 0; padding: 0; } @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } input:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }`}</style>
+    );
+
+    const irPara = (destino) => {
+      setAuthView(destino);
+      const hash = destino === "landing" ? "" : destino === "login" ? "#entrar" : "#criar-conta";
+      window.history.replaceState(null, "", hash || window.location.pathname);
+      window.scrollTo(0, 0);
+    };
+
+    if (authView === "landing") {
+      return (<>{estiloPublico}<LandingPage onEntrar={() => irPara("login")} onCriarConta={() => irPara("register")} /></>);
+    }
+
+    return (<>{estiloPublico}<LoginPage
+      initialMode={authView}
+      onVoltar={() => irPara("landing")}
+      onLogin={u => { setUser(u); setLoggedIn(true); }}
+    /></>);
+  }
 
   const sidebarW = isMobile ? 0 : (sidebarCollapsed ? 72 : 260);
 
