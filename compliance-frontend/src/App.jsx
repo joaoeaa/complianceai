@@ -341,7 +341,7 @@ class ApiClient {
     });
   }
 
-  // Auth — Register
+  // Auth: registro
   async register(email, password, fullName) {
     return this.request("/auth/register", {
       method: "POST",
@@ -404,7 +404,7 @@ const formatFileSize = (bytes) => {
   return (bytes / 1048576).toFixed(1) + " MB";
 };
 const formatDate = (dateStr) => {
-  if (!dateStr) return "—";
+  if (!dateStr) return "sem data";
   return new Date(dateStr).toLocaleDateString("pt-BR", {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
   });
@@ -420,7 +420,7 @@ const getStatusStyle = (status) => ({
   processing: { bg: "#eff6ff", color: "#2563eb", label: "Processando" },
   error: { bg: "#fef2f2", color: "#dc2626", label: "Erro" },
   uploaded: { bg: "#fefce8", color: "#ca8a04", label: "Enviado" }
-}[status] || { bg: "#f9fafb", color: "#6b7280", label: status || "—" });
+}[status] || { bg: "#f9fafb", color: "#6b7280", label: status || "desconhecido" });
 
 const F = "'DM Sans', sans-serif";
 
@@ -745,7 +745,7 @@ const DashboardPage = ({ onNavigate, onViewReport }) => {
   const stats = [
     { label: "Total de Docs", value: ov.total_documents || 0, icon: FileText, color: "#6366f1", bg: "#eef2ff" },
     { label: "Analisados", value: ov.total_analyzed || 0, icon: CheckCircle, color: "#10b981", bg: "#f0fdf4" },
-    { label: "Score Médio", value: ov.avg_risk_score != null ? ov.avg_risk_score : "—", icon: BarChart3, color: ov.avg_risk_score > 60 ? "#ef4444" : ov.avg_risk_score > 30 ? "#f59e0b" : "#10b981", bg: ov.avg_risk_score > 60 ? "#fef2f2" : ov.avg_risk_score > 30 ? "#fffbeb" : "#f0fdf4" },
+    { label: "Score Médio", value: ov.avg_risk_score != null ? ov.avg_risk_score : "sem dados", icon: BarChart3, color: ov.avg_risk_score > 60 ? "#ef4444" : ov.avg_risk_score > 30 ? "#f59e0b" : "#10b981", bg: ov.avg_risk_score > 60 ? "#fef2f2" : ov.avg_risk_score > 30 ? "#fffbeb" : "#f0fdf4" },
     { label: "Alto Risco", value: ov.high_risk_count || 0, icon: AlertTriangle, color: "#ef4444", bg: "#fef2f2" },
     { label: "Risco Médio", value: ov.medium_risk_count || 0, icon: TrendingUp, color: "#f59e0b", bg: "#fffbeb" },
     { label: "Processando", value: ov.total_pending || 0, icon: Loader2, color: "#2563eb", bg: "#eff6ff" },
@@ -1275,7 +1275,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
           const isExpanded = expandedAlert === i;
           return (
             <div key={i} style={{ borderBottom: i < alerts.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-              {/* Alert Header — clickable */}
+              {/* Alert Header, clickable */}
               <div
                 onClick={() => setExpandedAlert(isExpanded ? null : i)}
                 style={{ padding: "16px 24px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, transition: "background 0.15s", background: isExpanded ? "#fafbfc" : "white" }}
@@ -1294,7 +1294,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                 <ChevronDown size={16} color="#94a3b8" style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
               </div>
 
-              {/* Alert Details — expandable */}
+              {/* Alert Details, expandable */}
               {isExpanded && (
                 <div style={{ padding: "0 24px 20px 40px", animation: "fadeSlideUp 0.2s ease" }}>
                   {/* Issue detail */}
@@ -1304,7 +1304,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                   </div>
 
                   {/* Excerpt */}
-                  {alert.excerpt && alert.excerpt !== "—" && (
+                  {alert.excerpt && !["-", "—", "--", "N/A"].includes(alert.excerpt.trim()) && (
                     <div style={{ background: "#fffbeb", borderRadius: 10, padding: "12px 16px", marginBottom: 12, border: "1px solid #fef3c7" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -1321,7 +1321,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                     </div>
                   )}
 
-                  {/* Legal Basis — prominent card */}
+                  {/* Legal Basis, prominent card */}
                   {alert.legal_basis && (
                     <div style={{ background: "linear-gradient(135deg, #eef2ff, #e8e0ff)", borderRadius: 10, padding: "14px 16px", marginBottom: 12, border: "1px solid #c7d2fe" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
@@ -1595,7 +1595,7 @@ const HistoryPage = ({ onViewReport, showToast }) => {
           <div key={doc.id} className="history-row" style={{ display: "grid", padding: "12px 18px", borderBottom: i < documents.length - 1 ? "1px solid #f8fafc" : "none", alignItems: "center", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#fafbfc"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><FileText size={15} color="#94a3b8" style={{ flexShrink: 0 }} /><div style={{ minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.filename}</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{formatFileSize(doc.file_size)}</div></div></div>
             <div style={{ fontSize: 11, color: "#64748b", fontFamily: F }}>{formatDate(doc.uploaded_at)}</div>
-            <div>{doc.risk_score != null ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 32, height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${doc.risk_score}%`, height: "100%", background: getRiskColor(doc.risk_score), borderRadius: 2 }} /></div><span style={{ fontSize: 12, fontWeight: 700, color: getRiskColor(doc.risk_score), fontFamily: F }}>{doc.risk_score}</span></div> : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}</div>
+            <div>{doc.risk_score != null ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 32, height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${doc.risk_score}%`, height: "100%", background: getRiskColor(doc.risk_score), borderRadius: 2 }} /></div><span style={{ fontSize: 12, fontWeight: 700, color: getRiskColor(doc.risk_score), fontFamily: F }}>{doc.risk_score}</span></div> : <span style={{ color: "#cbd5e1", fontSize: 11 }}>sem score</span>}</div>
             <div><span style={{ fontSize: 10, fontWeight: 600, color: st.color, background: st.bg, padding: "2px 9px", borderRadius: 20, fontFamily: F }}>{st.label}</span></div>
             <div style={{ display: "flex", gap: 3 }}>
               {doc.status === "analyzed" && <button onClick={() => onViewReport(doc.id)} style={{ width: 30, height: 30, borderRadius: 7, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} title="Ver relatório"><Eye size={13} color="#6366f1" /></button>}
@@ -1726,7 +1726,7 @@ const LegislationPage = ({ showToast }) => {
         <button onClick={() => setSearchResults(null)} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", color: "#6366f1", fontWeight: 600, fontSize: 12, marginBottom: 18, padding: 0, fontFamily: F }}><ArrowLeft size={15} /> Voltar à Base Legal</button>
         <div style={{ marginBottom: 20 }}>
           <h2 style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", margin: "0 0 4px", fontFamily: F }}>Resultados da Busca</h2>
-          <p style={{ color: "#64748b", fontSize: 12, margin: 0, fontFamily: F }}>"{searchQuery}" — {searchResults.total} resultado{searchResults.total !== 1 ? "s" : ""} encontrado{searchResults.total !== 1 ? "s" : ""}</p>
+          <p style={{ color: "#64748b", fontSize: 12, margin: 0, fontFamily: F }}>"{searchQuery}": {searchResults.total} resultado{searchResults.total !== 1 ? "s" : ""} encontrado{searchResults.total !== 1 ? "s" : ""}</p>
         </div>
         {searchResults.results.length === 0 ? <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Nenhum resultado encontrado para esta busca.</div> :
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -3000,7 +3000,7 @@ const TeamPage = ({ showToast, user, onOrgDeleted, onOrgsChanged }) => {
 
 // ── Main App ──
 // Seletor do escopo de trabalho. Trocar aqui muda dashboard, histórico, nova
-// análise e regras de uma vez — é o contexto da sessão, não uma opção por tela.
+// análise e regras de uma vez: é o contexto da sessão, não uma opção por tela.
 const ScopeSwitcher = ({ scopeOrgId, orgs, onChange, isMobile }) => {
   const [open, setOpen] = useState(false);
   const current = orgs.find(o => o.id === scopeOrgId);
