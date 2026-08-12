@@ -410,8 +410,8 @@ async def test_download_report_html_success(
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "html_report.pdf" in resp.text
-    assert "Relatório de Compliance" in resp.text
-    assert "Resumo Executivo" in resp.text
+    assert "Relatório de conformidade contratual" in resp.text
+    assert "Resumo" in resp.text
 
 
 @pytest.mark.asyncio
