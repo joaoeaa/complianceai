@@ -75,6 +75,26 @@ CATALOGO: list[Lei] = [
 POR_SLUG = {lei.slug: lei for lei in CATALOGO}
 
 
+_NUMERO_DA_LEI = re.compile(r"(\d{1,3}(?:\.\d{3})*)\s*/\s*(\d{4})")
+
+
+def chave_da_lei(fonte: str) -> str:
+    """Identidade da lei, ignorando como a fonte foi escrita.
+
+    "Lei 8.078/1990" e "Lei 8.078/1990 (CDC)" são a mesma lei, mas a limpeza
+    comparava o texto inteiro e por isso não removia a versão antiga: as duas
+    conviviam na base, e os trechos velhos, de artigos escolhidos a mão,
+    competiam na busca com a lei íntegra.
+
+    Sem número reconhecível, cai no texto normalizado, que ao menos casa consigo
+    mesmo em reingestões.
+    """
+    m = _NUMERO_DA_LEI.search(fonte or "")
+    if not m:
+        return (fonte or "").strip().lower()
+    return f"{m.group(1).replace('.', '')}/{m.group(2)}"
+
+
 def _decodificar(conteudo: bytes) -> str:
     """As páginas antigas do Planalto são latin-1, mesmo declarando utf-8."""
     for encoding in ("utf-8", "latin-1"):
@@ -128,10 +148,15 @@ def ingerir(lei: Lei, db: Session, substituir: bool = True) -> int:
     from app.services.rag_service import ingest_legal_document_sync
 
     if substituir:
-        # Reingerir sem limpar duplicaria os artigos na busca.
-        antigos = db.execute(
-            select(LegalDocument).where(LegalDocument.source == lei.fonte)
-        ).scalars().all()
+        # Reingerir sem limpar duplicaria os artigos na busca. A comparação é pelo
+        # número da lei, e não pelo texto da fonte, porque seeds antigos gravaram
+        # a mesma lei com sufixo: "Lei 8.078/1990 (CDC)".
+        alvo = chave_da_lei(lei.fonte)
+        antigos = [
+            doc
+            for doc in db.execute(select(LegalDocument)).scalars().all()
+            if chave_da_lei(doc.source) == alvo
+        ]
         for antigo in antigos:
             db.execute(
                 LegalChunk.__table__.delete().where(LegalChunk.document_id == antigo.id)
