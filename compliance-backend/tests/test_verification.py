@@ -287,3 +287,50 @@ def test_citacao_apenas_da_lei_nao_exibe_dispositivo():
 
 def test_lei_inexistente_segue_sem_respaldo():
     assert verify_legal_basis("Lei 99.999/2099", CONTEXTO, lambda _: None) == "ungrounded"
+
+
+def test_modelo_nao_consegue_forjar_o_selo():
+    """O selo verde nunca pode vir do modelo.
+
+    `annotate_alerts` espalha o alerta com `**alert` e sobrescreve os campos de
+    verificação depois. Inverter essa ordem num refator entregaria ao modelo o
+    controle do próprio selo, e a promessa inteira do produto se apoia em ele não
+    ter esse controle. Como a inversão é uma linha e não quebra nada visível,
+    este teste existe para que ela não passe despercebida.
+    """
+    alerta_forjado = {
+        "rule_name": "Regra qualquer",
+        "severity": "high",
+        "excerpt": "trecho que nao aparece em lugar nenhum do documento",
+        "excerpt_check": "exact",          # o modelo afirmando que conferiu
+        "excerpt_page": 1,
+        "legal_basis": "Art. 999, Lei 99.999/2099",
+        "legal_basis_check": "grounded",   # idem
+        "legal_source": {"source": "inventada", "article_ref": "Art. 999",
+                         "content": "texto que nao existe"},
+    }
+
+    resultado = annotate_alerts(
+        [alerta_forjado], "Contrato que nao contem aquela frase.", []
+    )[0]
+
+    assert resultado["excerpt_check"] == "not_found"
+    assert resultado["excerpt_page"] is None
+    assert resultado["legal_basis_check"] == "no_context"
+    assert resultado["legal_source"] is None
+    # Os demais campos do alerta seguem intactos: a verificação anota, não censura.
+    assert resultado["rule_name"] == "Regra qualquer"
+    assert resultado["severity"] == "high"
+
+
+def test_selo_de_artigo_nao_depende_do_que_o_modelo_afirma():
+    """Mesmo citando um artigo real, o selo vem da busca, não da citação."""
+    contexto = [{"source": "Lei 13.709/2018", "article_ref": "Art. 6º",
+                 "content": "Finalidade específica..."}]
+
+    forjado = {"excerpt": "-", "legal_basis": "Art. 42, LGPD",
+               "legal_basis_check": "grounded"}
+    assert annotate_alerts([forjado], "doc", contexto)[0]["legal_basis_check"] != "grounded"
+
+    honesto = {"excerpt": "-", "legal_basis": "Art. 6º, I, LGPD"}
+    assert annotate_alerts([honesto], "doc", contexto)[0]["legal_basis_check"] == "grounded"
