@@ -53,6 +53,10 @@ app/
 ├── services/     # Regra de negócio: sem dependência de FastAPI
 │                 #   scope.py e rule_scope.py concentram as checagens de acesso;
 │                 #   se uma autorização não passa por ali, ela vai divergir
+│                 #   feedback_learning.py e analysis_errors.py moram aqui, e não
+│                 #   em workers/, porque aquele módulo carrega o Celery junto e
+│                 #   por isso é substituído por mock em boa parte da suíte:
+│                 #   lógica que vive lá não consegue ser testada de verdade
 ├── scripts/      # Seeds de legislação e manutenção de embeddings
 ├── workers/      # Tasks Celery
 └── main.py       # Wiring: rotas, middleware, lifespan
@@ -102,6 +106,7 @@ Outros scripts:
 | Script | Função |
 |---|---|
 | `ingest_planalto` | Ingestão a partir da fonte oficial, com embeddings. É o caminho atual |
+| `medir_analises` | Compara tempo, tokens e taxas de verificação por prompt ou modelo |
 | `seed_rules` | As 29 regras globais, 14 ativas. Idempotente, e alinha as já gravadas |
 | `generate_embeddings_for_chunks` | Gera embeddings dos chunks que ainda não têm |
 | `repopulate_chunks` | Reconstrói chunks de documentos legais que ficaram sem eles |
@@ -133,7 +138,11 @@ O texto é extraído **no upload**, e não aqui: API e worker são containers se
 
 A verificação não descarta alerta nenhum, apenas rotula. Um trecho não localizado pode ser paráfrase correta, e um artigo fora do top-k recuperado pode estar certo assim mesmo. O objetivo é dizer ao revisor onde confiar e onde ir conferir na fonte.
 
-Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar. O formato de resposta esperado está documentado lá.
+Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar. O formato de
+resposta esperado está documentado lá, e `PROMPT_VERSION` precisa ser incrementado
+junto: o valor fica gravado em `analyses.prompt_version` e é o que permite comparar
+análises antes e depois. O histórico das redações está em comentário ao lado da
+constante.
 
 ---
 

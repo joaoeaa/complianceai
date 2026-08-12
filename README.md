@@ -165,6 +165,7 @@ compliance-project/
 │   │   │   ├── rule_scope.py         # Escopo das regras + overrides das globais
 │   │   │   ├── audit.py              # Registro de acesso
 │   │   │   ├── feedback_learning.py  # Agregado de feedback, restrito ao escopo
+│   │   │   ├── analysis_errors.py    # Classifica falhas da análise em mensagem útil
 │   │   │   └── webhook_service.py
 │   │   ├── scripts/          # Seeds de legislação e das regras padrão
 │   │   ├── workers/          # Tasks Celery
@@ -331,6 +332,7 @@ Todas as rotas ficam sob o prefixo `/api/v1`. Documentação interativa em `/doc
 | `PATCH` | `/rules/{id}` | Editar. Só regras próprias ou da equipe que administra |
 | `PATCH` | `/rules/{id}/toggle` | Ativar/desativar. Em regra global, grava um override do escopo |
 | `PATCH` | `/rules/categoria/{area}` | Ligar ou desligar uma área do direito inteira |
+| `POST` | `/rules/restaurar-padrao` | Devolve as regras globais ao estado de fábrica neste escopo |
 | `DELETE` | `/rules/{id}` | Excluir. Regras globais não podem ser removidas |
 
 ### Legislação (RAG)
@@ -405,9 +407,39 @@ docker compose exec api pytest
 cd compliance-backend && pytest
 ```
 
-São **286 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
+São **350 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
 
 Cobrem autenticação, documentos, regras e seu escopo, organizações, templates, workflows, webhooks, dashboard, extração de documentos, o analisador de IA, a geração de relatórios e, com atenção especial, os limites que sustentam a confiança na ferramenta: o sigilo por cliente, o isolamento do feedback entre contas e a recusa do expurgo fora do prazo.
+
+---
+
+## Medindo mudanças
+
+Trocar o prompt ou o modelo sem medir é chute. `analyses` guarda o modelo, a
+versão do prompt, os tokens e a duração de cada análise, e há um script que monta
+a comparação:
+
+```bash
+python -m app.scripts.medir_analises              # por versão do prompt
+python -m app.scripts.medir_analises --por modelo # Sonnet contra Haiku
+python -m app.scripts.medir_analises --dias 7
+```
+
+A coluna que importa é `tk/alerta`. A saída total depende de quantos problemas o
+contrato tem, e contratos diferentes rendem números muito diferentes: dividir
+pelo número de alertas isola o quanto o modelo escreve por apontamento.
+
+Duas armadilhas, ambas já cometidas neste projeto:
+
+- **Comparar grupos com contratos diferentes.** Um único documento atípico move a
+  média do grupo inteiro e cria um efeito que não existe.
+- **Concluir com uma amostra por célula.** O mesmo contrato, no mesmo prompt,
+  variou 50% entre duas execuções. Efeito menor que isso não é detectável sem
+  repetir várias vezes.
+
+E o que o script não mede: falso negativo, o apontamento que deveria existir e não
+existe. Para isso não há atalho, só rodar contratos de resultado conhecido e
+conferir um a um.
 
 ---
 
