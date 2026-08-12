@@ -2520,7 +2520,7 @@ const ROLE_META = {
   member: { label: "Membro", color: "#059669", bg: "#f0fdf4", border: "#bbf7d0", icon: User },
 };
 
-const TeamPage = ({ showToast, user, onOrgDeleted }) => {
+const TeamPage = ({ showToast, user, onOrgDeleted, onOrgsChanged }) => {
   const [orgs, setOrgs] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgDetail, setOrgDetail] = useState(null);
@@ -2564,10 +2564,11 @@ const TeamPage = ({ showToast, user, onOrgDeleted }) => {
     setSaving(true);
     try {
       await api.createOrganization(createForm);
-      showToast("Organização criada com sucesso!", "success");
+      showToast("Equipe criada. Já aparece no seletor de escopo.", "success");
       setShowCreate(false);
       setCreateForm({ name: "", slug: "", cnpj: "" });
       fetchOrgs();
+      onOrgsChanged?.();
     } catch (err) {
       showToast(err.message || "Erro ao criar organização", "error");
     } finally { setSaving(false); }
@@ -2582,6 +2583,7 @@ const TeamPage = ({ showToast, user, onOrgDeleted }) => {
       setShowAddMember(false);
       setAddForm({ email: "", role: "member" });
       loadOrgDetail(selectedOrg);
+      onOrgsChanged?.();
     } catch (err) {
       showToast(err.message || "Erro ao adicionar membro", "error");
     } finally { setSaving(false); }
@@ -2593,6 +2595,7 @@ const TeamPage = ({ showToast, user, onOrgDeleted }) => {
       showToast("Papel atualizado!", "success");
       setEditRole(null);
       loadOrgDetail(selectedOrg);
+      onOrgsChanged?.();
     } catch (err) {
       showToast(err.message || "Erro ao atualizar papel", "error");
     }
@@ -2621,6 +2624,7 @@ const TeamPage = ({ showToast, user, onOrgDeleted }) => {
       showToast("Membro removido!", "success");
       setConfirmRemove(null);
       loadOrgDetail(selectedOrg);
+      onOrgsChanged?.();
     } catch (err) {
       showToast(err.message || "Erro ao remover membro", "error");
     }
@@ -2928,26 +2932,40 @@ export default function ComplianceApp() {
   useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener("resize", c); return () => window.removeEventListener("resize", c); }, []);
 
   // Equipes de que o usuário participa, para alimentar o seletor de escopo.
+  // Precisa ser recarregável: criar uma equipe, entrar em outra ou mudar de papel
+  // altera o seletor, e obrigar a recarregar a página para ver isso é o tipo de
+  // atrito que faz parecer que a criação não funcionou.
+  const aplicarOrgs = useCallback((orgs) => {
+    setMyOrgs(orgs);
+    // Escopo salvo que não existe mais (saiu da equipe): volta para o pessoal.
+    setScopeOrgId(prev => {
+      if (prev && !orgs.some(o => o.id === prev)) {
+        api.setScope(null);
+        return null;
+      }
+      return prev;
+    });
+  }, []);
+
+  const refreshOrgs = useCallback(async () => {
+    try {
+      const orgs = (await api.listOrganizations()) || [];
+      aplicarOrgs(orgs);
+      return orgs;
+    } catch {
+      setMyOrgs([]);
+      return [];
+    }
+  }, [aplicarOrgs]);
+
   useEffect(() => {
     if (!loggedIn) return;
-    let cancelled = false;
+    let ativo = true;
     api.listOrganizations()
-      .then(list => {
-        if (cancelled) return;
-        const orgs = list || [];
-        setMyOrgs(orgs);
-        // Escopo salvo que não existe mais (saiu da equipe): volta para o pessoal.
-        setScopeOrgId(prev => {
-          if (prev && !orgs.some(o => o.id === prev)) {
-            api.setScope(null);
-            return null;
-          }
-          return prev;
-        });
-      })
-      .catch(() => { if (!cancelled) setMyOrgs([]); });
-    return () => { cancelled = true; };
-  }, [loggedIn]);
+      .then(list => { if (ativo) aplicarOrgs(list || []); })
+      .catch(() => { if (ativo) setMyOrgs([]); });
+    return () => { ativo = false; };
+  }, [loggedIn, aplicarOrgs]);
 
   // Equipe excluida: some da lista e, se era o escopo ativo, volta para o pessoal.
   const handleOrgDeleted = (orgId) => {
@@ -3033,7 +3051,7 @@ export default function ComplianceApp() {
       case "legislation": return <LegislationPage showToast={showToast} />;
       case "rules": return <RulesPage showToast={showToast} scopeOrgId={scopeOrgId} />;
       case "clients": return <ClientsPage showToast={showToast} scopeOrgId={scopeOrgId} canManage={podeGerirEscopo} />;
-      case "team": return <TeamPage showToast={showToast} user={user} onOrgDeleted={handleOrgDeleted} />;
+      case "team": return <TeamPage showToast={showToast} user={user} onOrgDeleted={handleOrgDeleted} onOrgsChanged={refreshOrgs} />;
       default: return <DashboardPage onNavigate={navigate} onViewReport={viewReport} />;
     }
   };
