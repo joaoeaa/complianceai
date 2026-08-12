@@ -919,6 +919,7 @@ const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true
       <div style={{ marginBottom: 28 }}><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Nova Análise</h1><p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Upload de contrato para análise automática com IA real (Claude)</p></div>
       {!analyzing ? (
         <div style={{ maxWidth: 600, margin: "0 auto" }}>
+          <RegrasDaAnalise showToast={showToast} scopeOrgId={scopeOrgId} canManage={canManage} />
           <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }} onClick={() => fileInputRef.current?.click()} style={{ border: `2px dashed ${dragOver ? "#6366f1" : file ? "#10b981" : "#cbd5e1"}`, borderRadius: 18, padding: "48px 28px", textAlign: "center", cursor: "pointer", background: dragOver ? "#eef2ff" : file ? "#f0fdf4" : "#fafbfc", transition: "all 0.3s" }}>
             <input ref={fileInputRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
             {file ? (<><div style={{ width: 52, height: 52, borderRadius: 13, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><CheckCircle size={26} color="#16a34a" /></div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{file.name}</div><div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>{formatFileSize(file.size)}</div><button onClick={e => { e.stopPropagation(); setFile(null); }} style={{ marginTop: 8, background: "none", border: "none", color: "#6366f1", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Trocar arquivo</button></>) : (<><div style={{ width: 56, height: 56, borderRadius: 16, background: dragOver ? "#c7d2fe" : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", transition: "all 0.3s" }}><FileUp size={26} color={dragOver ? "#6366f1" : "#94a3b8"} /></div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: F }}>Arraste e solte seu documento</div><div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>ou clique para selecionar • PDF ou DOCX • até 10MB</div></>)}
@@ -936,9 +937,6 @@ const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true
                   : "Sem cliente, o documento fica visível a toda a equipe."}
               </div>
             </div>
-          )}
-          {file && (
-            <RegrasDaAnalise showToast={showToast} scopeOrgId={scopeOrgId} canManage={canManage} />
           )}
           {file && <button onClick={startAnalysis} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 18, padding: "13px", borderRadius: 11, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", fontSize: 14, fontWeight: 700, fontFamily: F, boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}><Zap size={17} /> Iniciar Análise com IA</button>}
           <div className="upload-features" style={{ display: "grid", gap: 10, marginTop: 32 }}>
@@ -2377,7 +2375,7 @@ const RegrasDaAnalise = ({ showToast, scopeOrgId, canManage = true }) => {
     : { borda: "#fcd34d", fundo: "#fffbeb", icone: "#b45309", titulo: "#92400e" };
 
   return (
-    <div style={{ marginTop: 16, border: `1px solid ${tom.borda}`, borderLeft: `3px solid ${tom.icone}`, borderRadius: 11, background: tom.fundo, overflow: "hidden", textAlign: "left" }}>
+    <div style={{ marginBottom: 18, border: `1px solid ${tom.borda}`, borderLeft: `3px solid ${tom.icone}`, borderRadius: 11, background: tom.fundo, overflow: "hidden", textAlign: "left" }}>
       <div style={{ display: "flex", gap: 11, padding: "13px 15px" }}>
         <AlertTriangle size={16} color={tom.icone} style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
