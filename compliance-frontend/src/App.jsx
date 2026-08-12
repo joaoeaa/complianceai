@@ -2931,6 +2931,19 @@ export default function ComplianceApp() {
 
   useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener("resize", c); return () => window.removeEventListener("resize", c); }, []);
 
+  // O botão voltar do navegador precisa sair do formulário para a landing, e não
+  // do site. Isso exige que ir para o formulário empilhe uma entrada no histórico
+  // (pushState) e que o retorno seja ouvido aqui, senão a tela fica dessincronizada
+  // da URL.
+  useEffect(() => {
+    const sincronizar = () => {
+      const h = window.location.hash;
+      setAuthView(h === "#entrar" ? "login" : h === "#criar-conta" ? "register" : "landing");
+    };
+    window.addEventListener("popstate", sincronizar);
+    return () => window.removeEventListener("popstate", sincronizar);
+  }, []);
+
   // Equipes de que o usuário participa, para alimentar o seletor de escopo.
   // Precisa ser recarregável: criar uma equipe, entrar em outra ou mudar de papel
   // altera o seletor, e obrigar a recarregar a página para ver isso é o tipo de
@@ -3016,11 +3029,37 @@ export default function ComplianceApp() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap'); * { box-sizing: border-box; margin: 0; padding: 0; } @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } input:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }`}</style>
     );
 
+    const hashDe = (destino) =>
+      destino === "login" ? "#entrar" : destino === "register" ? "#criar-conta" : "";
+
+    // `interno: true` marca as entradas que este app empilhou. É o que permite
+    // saber, no botão Voltar da tela, se existe uma landing atrás para onde
+    // retornar ou se a pessoa abriu o link do formulário diretamente.
     const irPara = (destino) => {
       setAuthView(destino);
-      const hash = destino === "landing" ? "" : destino === "login" ? "#entrar" : "#criar-conta";
-      window.history.replaceState(null, "", hash || window.location.pathname);
+      const hash = hashDe(destino);
+      window.history.pushState({ interno: true }, "", hash || window.location.pathname);
       window.scrollTo(0, 0);
+    };
+
+    // Voltar da tela: desfaz a navegação em vez de empilhar mais uma entrada,
+    // para o histórico não virar landing, login, landing, login.
+    const voltarParaLanding = () => {
+      if (window.history.state?.interno) {
+        window.history.back();
+        return;
+      }
+      // Chegou direto em /#entrar, por link compartilhado: não há o que desfazer.
+      setAuthView("landing");
+      window.history.replaceState(null, "", window.location.pathname);
+      window.scrollTo(0, 0);
+    };
+
+    const aoEntrar = (u) => {
+      // O hash do formulário não faz sentido dentro do app.
+      window.history.replaceState(null, "", window.location.pathname);
+      setUser(u);
+      setLoggedIn(true);
     };
 
     if (authView === "landing") {
@@ -3029,8 +3068,8 @@ export default function ComplianceApp() {
 
     return (<>{estiloPublico}<LoginPage
       initialMode={authView}
-      onVoltar={() => irPara("landing")}
-      onLogin={u => { setUser(u); setLoggedIn(true); }}
+      onVoltar={voltarParaLanding}
+      onLogin={aoEntrar}
     /></>);
   }
 
