@@ -9,6 +9,7 @@ import aiofiles
 import re
 from pathlib import Path
 from typing import Optional
+import unicodedata
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,6 +62,41 @@ async def _rules_for_document(doc: Document, db: AsyncSession) -> list[dict]:
         )
     ).scalars().all()
     return [r for r in apply_overrides(rules, overrides) if r["is_active"]]
+
+
+def _cabecalho_download(nome_visivel: str) -> dict:
+    """Content-Disposition com o nome legível e um substituto em ASCII.
+
+    Cabeçalho HTTP não carrega acento, então o nome bonito vai em `filename*`
+    (RFC 5987), que todo navegador atual entende, e o `filename` simples fica
+    como reserva. Sem isso, ou o nome chega corrompido ou a resposta quebra
+    quando o arquivo tem um caractere fora do latin-1.
+
+    O substituto translitera em vez de trocar por sublinhado: "Locação" vira
+    "Locacao", e não "Loca__o".
+    """
+    # Windows e macOS recusam estes caracteres em nome de arquivo. Limpar aqui, e
+    # nao so no substituto ascii, evita que o navegador salve um nome mutilado.
+    nome_visivel = re.sub(r'[\\/:*?"<>|]+', "-", nome_visivel).strip() or "documento"
+
+    sem_acento = unicodedata.normalize("NFKD", nome_visivel)
+    sem_acento = sem_acento.encode("ascii", "ignore").decode("ascii")
+    # Caracteres que o Windows e o macOS recusam em nome de arquivo.
+    sem_acento = re.sub(r'[\\/:*?"<>|]+', "-", sem_acento)
+    sem_acento = re.sub(r"\s+", " ", sem_acento).strip() or "documento"
+
+    return {
+        "Content-Disposition": (
+            f'attachment; filename="{sem_acento}"; '
+            f"filename*=UTF-8''{quote(nome_visivel)}"
+        )
+    }
+
+
+def _nome_do_relatorio(nome_do_contrato: str) -> str:
+    """Nome do relatório derivado do contrato, para os dois ficarem juntos na pasta."""
+    base = nome_do_contrato.rsplit(".", 1)[0].strip() or "documento"
+    return f"Relatório - {base}.pdf"
 
 
 def _doc_to_response(doc: Document) -> DocumentResponse:
@@ -468,23 +504,10 @@ async def download_original(
 
     conteudo = await asyncio.to_thread(caminho.read_bytes)
 
-    # Cabecalho HTTP nao aceita acento; mantem a extensao e envia o nome original
-    # em filename* para os navegadores que sabem ler.
-    base, _, ext = doc.filename.rpartition(".")
-    ascii_name = re.sub(r"[^\w\-.]", "_", base or doc.filename)
-    if ext:
-        ascii_name = f"{ascii_name}.{ext}"
-    utf8_name = quote(doc.filename)
-
     return Response(
         content=conteudo,
         media_type=doc.mime_type or "application/octet-stream",
-        headers={
-            # RFC 5987: as duas aspas simples fazem parte da sintaxe charset'lang'valor
-            "Content-Disposition": (
-                f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
-            )
-        },
+        headers=_cabecalho_download(doc.filename),
     )
 
 
@@ -579,14 +602,10 @@ async def download_report(
         )
         pdf_bytes = generate_pdf_report(html_content)
 
-        # sanitizar filename para o header
-        safe_name = re.sub(r'[^\w\-.]', '_', document.filename.rsplit('.', 1)[0])
-        filename = f"relatorio_{safe_name}.pdf"
-
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=_cabecalho_download(_nome_do_relatorio(document.filename)),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao gerar PDF: {str(e)}")
