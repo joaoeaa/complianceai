@@ -1133,6 +1133,14 @@ const ReportPage = ({ docId, onBack, showToast }) => {
   const complianceRate = activeRules.length > 0 ? Math.round((passedRules.length / activeRules.length) * 100) : 100;
   const riskCol = getRiskColor(analysis.risk_score);
 
+  // Verificacao agregada: mesmos denominadores do resumo do backend. So conta
+  // alerta em que havia o que conferir; clausula ausente nao tem trecho.
+  const comTrecho = alerts.filter(a => a.excerpt_check && a.excerpt_check !== "empty");
+  const trechosOk = comTrecho.filter(a => a.excerpt_check === "exact").length;
+  const trechosPend = comTrecho.filter(a => a.excerpt_check === "not_found").length;
+  const comCitacao = alerts.filter(a => a.legal_basis_check && a.legal_basis_check !== "empty");
+  const citacoesOk = comCitacao.filter(a => ["grounded", "in_base"].includes(a.legal_basis_check)).length;
+
   return (
     <div>
       {/* Header */}
@@ -1152,7 +1160,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
         <button
           onClick={downloadPDF}
           disabled={downloadingPdf}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, background: downloadingPdf ? "#94a3b8" : "linear-gradient(135deg, #0f172a, #1e293b)", color: "white", padding: "10px 20px", borderRadius: 10, border: "none", cursor: downloadingPdf ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, fontFamily: F, boxShadow: "0 2px 8px rgba(15,23,42,0.15)" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, background: downloadingPdf ? "#94a3b8" : "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", padding: "10px 20px", borderRadius: 10, border: "none", cursor: downloadingPdf ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: F, boxShadow: "0 4px 16px rgba(99,102,241,0.35)" }}
           onMouseOver={(e) => !downloadingPdf && (e.currentTarget.style.opacity = "0.9")}
           onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
         >
@@ -1189,6 +1197,28 @@ const ReportPage = ({ docId, onBack, showToast }) => {
           </div>
         ))}
       </div>
+
+      {/* Faixa de verificacao: quanto do relatorio foi conferido contra as fontes */}
+      {alerts.length > 0 && (comTrecho.length > 0 || comCitacao.length > 0) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "12px 18px", marginBottom: 22, background: "linear-gradient(90deg, #eef2ff, #f5f3ff)", border: "1px solid #e0e7ff", borderRadius: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", fontFamily: F, marginRight: 4 }}>Verificação automática:</span>
+          {comTrecho.length > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, color: "#15803d", background: "#ecfdf5", border: "1px solid #bbf7d0", padding: "3px 10px", borderRadius: 20, fontFamily: F }}>
+              <CheckCircle size={11} /> {trechosOk} de {comTrecho.length} trechos localizados
+            </span>
+          )}
+          {comCitacao.length > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, color: "#15803d", background: "#ecfdf5", border: "1px solid #bbf7d0", padding: "3px 10px", borderRadius: 20, fontFamily: F }}>
+              <CheckCircle size={11} /> {citacoesOk} de {comCitacao.length} citações na base
+            </span>
+          )}
+          {trechosPend > 0 && (
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", padding: "3px 10px", borderRadius: 20, fontFamily: F }}>
+              {trechosPend} {trechosPend === 1 ? "trecho" : "trechos"} a conferir na fonte
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Main Report Grid */}
       <div className="report-grid" style={{ display: "grid", gap: 18, marginBottom: 22 }}>
@@ -1293,8 +1323,12 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                 <div style={{ width: 4, height: 36, borderRadius: 2, background: sev.color, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 10, fontWeight: 700, color: "#8a93a8", border: "1px solid #e6e9f2", borderRadius: 6, padding: "1px 6px" }}>{String(i + 1).padStart(2, "0")}</span>
                     <span style={{ fontSize: 10, fontWeight: 700, color: sev.color, background: sev.bg, padding: "2px 10px", borderRadius: 20, border: `1px solid ${sev.border}`, fontFamily: F }}>{sev.label}</span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{alert.rule_name}</span>
+                    {alert.excerpt_check === "not_found" && !isExpanded && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontFamily: F }}>trecho a conferir</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 12, color: "#475569", fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>{alert.issue}</div>
                 </div>
