@@ -765,7 +765,7 @@ const DashboardPage = ({ onNavigate, onViewReport }) => {
   return (
     <div>
       <div style={{ marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10 }}>
-        <div><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Dashboard</h1><p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Visão geral das análises de compliance</p></div>
+        <div><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Dashboard</h1><p style={{ color: "#8a93a8", fontSize: 12.5, marginTop: 3, fontFamily: F }}>Visão geral das análises de compliance</p></div>
         <button onClick={() => { setLoading(true); Promise.all([api.getDashboard().catch(() => null), api.listDocuments({ limit: 5 }).catch(() => ({ documents: [] }))]).then(([d, docs]) => { setDashboard(d); setDocuments(docs?.documents || []); }).finally(() => setLoading(false)); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#64748b", fontFamily: F }}><RefreshCw size={14} />Atualizar</button>
       </div>
 
@@ -1150,17 +1150,19 @@ const ReportPage = ({ docId, onBack, showToast }) => {
       {/* Header */}
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", color: "#6366f1", fontWeight: 600, fontSize: 12, marginBottom: 18, padding: 0, fontFamily: F }}><ArrowLeft size={15} /> Voltar aos documentos</button>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Relatório de Conformidade</h1>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-            <FileText size={14} color="#94a3b8" />
-            <span style={{ color: "#475569", fontSize: 13, fontWeight: 500, fontFamily: F }}>{doc.filename}</span>
-            <span style={{ color: "#d1d5db" }}>|</span>
-            <Clock size={12} color="#94a3b8" />
-            <span style={{ color: "#94a3b8", fontSize: 11, fontFamily: F }}>{formatDate(analysis.analyzed_at || doc.uploaded_at)}</span>
+      <div style={{ display: "flex", alignItems: "stretch", marginBottom: 22, flexWrap: "wrap", gap: 14 }}>
+        <div style={{ flex: 1, minWidth: 300, background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(11,18,32,0.04), 0 8px 24px rgba(11,18,32,0.05)", padding: "16px 20px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "#eef2ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <FileText size={20} color="#6366f1" />
           </div>
-        </div>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ fontSize: 17, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.4px", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.filename}</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+              <Clock size={11} color="#94a3b8" />
+              <span style={{ color: "#8a93a8", fontSize: 11, fontFamily: F }}>Relatório de conformidade · {formatDate(analysis.analyzed_at || doc.uploaded_at)}</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
         <button
           onClick={downloadPDF}
           disabled={downloadingPdf}
@@ -1180,6 +1182,23 @@ const ReportPage = ({ docId, onBack, showToast }) => {
           {downloadingOriginal ? <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={15} />}
           {downloadingOriginal ? "Baixando..." : "Original"}
         </button>
+          </div>
+        </div>
+
+        {/* Anel de score, como no mock: numero, faixa e quebra por severidade */}
+        <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(11,18,32,0.04), 0 8px 24px rgba(11,18,32,0.05)", padding: "14px 22px", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ position: "relative", width: 62, height: 62, flexShrink: 0 }}>
+            <svg width={62} height={62} style={{ transform: "rotate(-90deg)" }}>
+              <circle cx={31} cy={31} r={26} fill="none" stroke="#edf0f6" strokeWidth={7} />
+              <circle cx={31} cy={31} r={26} fill="none" stroke={riskCol} strokeWidth={7} strokeLinecap="round" strokeDasharray={163.4} strokeDashoffset={163.4 * (1 - (analysis.risk_score || 0) / 100)} style={{ transition: "stroke-dashoffset 1s ease" }} />
+            </svg>
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, color: "#0f172a", fontFamily: F }}>{analysis.risk_score}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: riskCol, fontFamily: F }}>Risco {analysis.risk_score >= 70 ? "alto" : analysis.risk_score >= 40 ? "moderado" : "baixo"}</div>
+            <div style={{ fontSize: 10.5, color: "#8a93a8", fontFamily: F, whiteSpace: "nowrap" }}>{hc} alta · {mc} média · {lc2} baixa</div>
+          </div>
+        </div>
       </div>
 
       {/* Top Stats Row */}
@@ -3098,7 +3117,7 @@ const ScopeSwitcher = ({ scopeOrgId, orgs, onChange, isMobile }) => {
     <div style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(!open)}
-        style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontFamily: F, maxWidth: isMobile ? 150 : 240 }}
+        style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(10px)", cursor: "pointer", fontFamily: F, maxWidth: isMobile ? 150 : 240, boxShadow: "0 1px 2px rgba(11,18,32,0.05), 0 6px 18px rgba(11,18,32,0.06)" }}
         title="Escopo de trabalho"
       >
         <div style={{ width: 22, height: 22, borderRadius: 6, background: current ? "#f5f3ff" : "#eef2ff", border: `1px solid ${current ? "#ddd6fe" : "#c7d2fe"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -3336,7 +3355,7 @@ export default function ComplianceApp() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f5f6fa", fontFamily: F }}>
+    <div style={{ minHeight: "100vh", background: "#eef1f7", fontFamily: F }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
