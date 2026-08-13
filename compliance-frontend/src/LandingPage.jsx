@@ -135,7 +135,9 @@ const CSS = `
   }
   .lp-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(99,102,241,.55); }
   @media (max-width: 760px) { .lp-nav-links { display: none; } }
-  @media (max-width: 400px) { .lp-nav-entrar { display: none; } }
+  /* No espaco apertado sai o nome escrito, nunca o Entrar: quem volta pelo
+     celular precisa do login na barra, e o escudo sozinho ja marca a marca. */
+  @media (max-width: 380px) { .lp-logo b { display: none; } }
 
   /* ── Botões ─────────────────────────────────────────────────────────── */
   .lp-cta {
