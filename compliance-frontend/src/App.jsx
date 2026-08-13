@@ -929,7 +929,7 @@ const UploadPage = ({ onAnalyzeComplete, showToast, scopeOrgId, canManage = true
 
   return (
     <div>
-      <div style={{ marginBottom: 28 }}><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Nova Análise</h1><p style={{ color: "#64748b", fontSize: 13, marginTop: 3, fontFamily: F }}>Upload de contrato para análise automática com IA</p></div>
+      <div style={{ marginBottom: 28 }}><h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.03em", margin: 0 }}>Nova Análise</h1><p style={{ color: "#8a93a8", fontSize: 12.5, marginTop: 3, fontFamily: F }}>Envie um contrato para análise de conformidade</p></div>
       {!analyzing ? (
         <div style={{ maxWidth: 600, margin: "0 auto" }}>
           <RegrasDaAnalise showToast={showToast} scopeOrgId={scopeOrgId} canManage={canManage} />
