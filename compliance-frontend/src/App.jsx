@@ -1185,20 +1185,39 @@ const ReportPage = ({ docId, onBack, showToast }) => {
           </div>
         </div>
 
-        {/* Anel de score, como no mock: numero, faixa e quebra por severidade */}
-        <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(11,18,32,0.04), 0 8px 24px rgba(11,18,32,0.05)", padding: "14px 22px", display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ position: "relative", width: 62, height: 62, flexShrink: 0 }}>
-            <svg width={62} height={62} style={{ transform: "rotate(-90deg)" }}>
-              <circle cx={31} cy={31} r={26} fill="none" stroke="#edf0f6" strokeWidth={7} />
-              <circle cx={31} cy={31} r={26} fill="none" stroke={riskCol} strokeWidth={7} strokeLinecap="round" strokeDasharray={163.4} strokeDashoffset={163.4 * (1 - (analysis.risk_score || 0) / 100)} style={{ transition: "stroke-dashoffset 1s ease" }} />
+      </div>
+
+      {/* Os quatro indicadores do relatorio, no mesmo nivel. O score leva o
+          anel; os demais seguem o padrao de card de estatistica. */}
+      <div className="report-stats" style={{ display: "grid", gap: 14, marginBottom: 22 }}>
+        <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(11,18,32,0.04), 0 8px 24px rgba(11,18,32,0.05)", padding: "14px 18px", display: "flex", alignItems: "center", gap: 13 }}>
+          <div style={{ position: "relative", width: 54, height: 54, flexShrink: 0 }}>
+            <svg width={54} height={54} style={{ transform: "rotate(-90deg)" }}>
+              <circle cx={27} cy={27} r={22} fill="none" stroke="#edf0f6" strokeWidth={6} />
+              <circle cx={27} cy={27} r={22} fill="none" stroke={riskCol} strokeWidth={6} strokeLinecap="round" strokeDasharray={138.2} strokeDashoffset={138.2 * (1 - (analysis.risk_score || 0) / 100)} style={{ transition: "stroke-dashoffset 1s ease" }} />
             </svg>
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, color: "#0f172a", fontFamily: F }}>{analysis.risk_score}</div>
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#0f172a", fontFamily: F }}>{analysis.risk_score}</div>
           </div>
           <div>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: riskCol, fontFamily: F }}>Risco {analysis.risk_score >= 70 ? "alto" : analysis.risk_score >= 40 ? "moderado" : "baixo"}</div>
-            <div style={{ fontSize: 10.5, color: "#8a93a8", fontFamily: F, whiteSpace: "nowrap" }}>score de risco</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>Score de Risco</div>
+            <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em", color: riskCol, fontFamily: F }}>{analysis.risk_score >= 70 ? "Alto" : analysis.risk_score >= 40 ? "Moderado" : "Baixo"}</div>
           </div>
         </div>
+        {[
+          { label: "Total de Alertas", value: alerts.length, icon: AlertTriangle, color: "#f59e0b", bg: "#fffbeb" },
+          { label: "Conformidade", value: complianceRate + "%", icon: CheckCircle, color: "#10b981", bg: "#f0fdf4" },
+          { label: "Regras Analisadas", value: activeRules.length, icon: Scale, color: "#6366f1", bg: "#eef2ff" },
+        ].map((stat, i) => (
+          <div key={i} style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(11,18,32,0.04), 0 8px 24px rgba(11,18,32,0.05)", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 11, background: stat.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <stat.icon size={20} color={stat.color} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>{stat.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.02em" }}>{stat.value}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Faixa de verificacao: quanto do relatorio foi conferido contra as fontes */}
@@ -1237,16 +1256,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 28, height: 28, borderRadius: 7, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center" }}><CheckCircle size={14} color="#10b981" /></div>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", fontFamily: F }}>Checklist de Regras</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
-            <div style={{ position: "relative", width: 40, height: 40 }}>
-              <svg width={40} height={40} style={{ transform: "rotate(-90deg)" }}>
-                <circle cx={20} cy={20} r={16} fill="none" stroke="#e5e7eb" strokeWidth={4} />
-                <circle cx={20} cy={20} r={16} fill="none" stroke="#10b981" strokeWidth={4} strokeDasharray={`${(complianceRate / 100) * 100.5} 100.5`} strokeLinecap="round" style={{ transition: "stroke-dasharray 1s ease" }} />
-              </svg>
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#0f172a", fontFamily: F }}>{complianceRate}%</div>
-            </div>
-            <span style={{ fontSize: 11, color: "#64748b", fontFamily: F }}>{passedRules.length} de {activeRules.length} regras aprovadas</span>
-          </div>
+          <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: F, marginLeft: "auto" }}>{passedRules.length}/{activeRules.length} aprovadas</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           {failedRules.map(rule => (
