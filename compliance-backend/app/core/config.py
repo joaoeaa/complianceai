@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Precisa passar com folga do intervalo do batimento (60s) e do maior intervalo
     # entre duas atualizações sem batimento: uma chamada ao LLM mais o backoff.
     ORPHAN_TIMEOUT_MINUTES: int = 12
+    # Teto do batimento, contado do início da primeira tentativa. Passado isto, a
+    # análise deixa de ser renovada e vira órfã no prazo acima: uma thread travada
+    # não segura o documento em processing para sempre.
+    ANALYSIS_MAX_DURATION_MINUTES: int = 30
 
     # ─── CORS ───
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"]

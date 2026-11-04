@@ -497,3 +497,123 @@ def test_batimento_roda_enquanto_ha_analise_e_para_depois(monkeypatch):
     thread.join(timeout=5)
     assert not thread.is_alive()
     assert analysis_runner._batimento is None
+
+
+# ─── Teto do batimento ───
+
+class _Relogio:
+    """Relógio monotônico de mentira: o teste avança 30 minutos sem esperá-los."""
+
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+def _sinal(doc_id: str) -> datetime:
+    return _documento(doc_id).analysis_updated_at.replace(tzinfo=timezone.utc)
+
+
+def _envelhecer_sinal(doc_id: str) -> None:
+    with SyncSession() as db:
+        db.execute(update(Document).where(Document.id == doc_id).values(analysis_updated_at=VELHO))
+        db.commit()
+
+
+async def _esperar(condicao, mensagem: str, segundos: float = 5) -> None:
+    import asyncio
+
+    prazo = time.monotonic() + segundos
+    while time.monotonic() < prazo:
+        if condicao():
+            return
+        await asyncio.sleep(0.02)
+    pytest.fail(mensagem)
+
+
+@pytest.fixture
+def batimento_rapido(monkeypatch) -> _Relogio:
+    relogio = _Relogio()
+    monkeypatch.setattr(analysis_runner, "BATIMENTO_SEGUNDOS", 0.05)
+    monkeypatch.setattr(analysis_runner, "_default_session", SyncSession)
+    monkeypatch.setattr(analysis_runner, "_relogio", relogio)
+    return relogio
+
+
+async def test_batimento_para_no_teto_de_um_runner_que_nunca_termina(
+    monkeypatch, batimento_rapido
+):
+    """Uma thread travada não pode segurar o documento em processing para sempre."""
+    import asyncio
+    import threading
+
+    relogio = batimento_rapido
+    comecou, liberar = threading.Event(), threading.Event()
+
+    def nunca_termina(_doc_id, **_kw):
+        comecou.set()
+        liberar.wait()  # só a limpeza do teste solta
+        return "analyzed"
+
+    monkeypatch.setattr(analysis_runner, "executar_analise", nunca_termina)
+    doc_id = _criar_documento("processing", analysis_updated_at=VELHO)
+
+    analysis_runner.agendar_analise(doc_id)
+    try:
+        assert comecou.wait(5)
+
+        # 29 minutos depois do início da primeira tentativa: ainda dentro do teto.
+        relogio.t += 29 * 60
+        await _esperar(lambda: _sinal(doc_id) > RECENTE, "não renovou dentro do teto")
+
+        # 31 minutos: passou do teto padrão de 30.
+        relogio.t += 2 * 60
+        await asyncio.sleep(0.3)  # deixa assentar um batimento que já estivesse em voo
+        _envelhecer_sinal(doc_id)
+        await asyncio.sleep(0.5)  # uns dez intervalos de batimento
+
+        assert _sinal(doc_id) < RECENTE, "o batimento seguiu renovando depois do teto"
+        # A thread continua viva: o teto não a interrompe, só deixa de cobri-la.
+        assert doc_id in analysis_runner._em_execucao
+
+        # E sem batimento o documento cai na detecção normal de órfã.
+        async with TestSession() as db:
+            assert await analysis_runner.marcar_analises_orfas(db) == 1
+        assert _documento(doc_id).status == "error"
+    finally:
+        liberar.set()
+
+    await _esperar(
+        lambda: doc_id not in analysis_runner._em_execucao and analysis_runner._batimento is None,
+        "a thread ou o batimento não terminaram depois de soltos",
+    )
+    assert doc_id not in analysis_runner._inicio
+
+
+async def test_teto_conta_do_inicio_da_tentativa_e_nao_da_espera_na_fila(batimento_rapido):
+    """Na fila não há tentativa começada: esperar vaga não consome o teto."""
+    relogio = batimento_rapido
+    doc_id = _criar_documento("uploaded", analysis_updated_at=VELHO)
+
+    analysis_runner._registrar(doc_id)  # agendado, sem thread do pool ainda
+    try:
+        relogio.t += 60 * 60
+        await _esperar(lambda: _sinal(doc_id) > RECENTE, "documento na fila deixou de ser renovado")
+    finally:
+        analysis_runner._desregistrar(doc_id)
+
+
+def test_teto_vem_da_configuracao(monkeypatch, batimento_rapido):
+    relogio = batimento_rapido
+    monkeypatch.setattr(analysis_runner.settings, "ANALYSIS_MAX_DURATION_MINUTES", 5)
+    with analysis_runner._cond:
+        analysis_runner._em_execucao.update({"dentro", "fora"})
+        analysis_runner._inicio["dentro"] = relogio.t - 4 * 60
+        analysis_runner._inicio["fora"] = relogio.t - 6 * 60
+    try:
+        with analysis_runner._cond:
+            assert analysis_runner._renovaveis() == ["dentro"]
+    finally:
+        analysis_runner._desregistrar("dentro")
+        analysis_runner._desregistrar("fora")

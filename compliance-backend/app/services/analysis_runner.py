@@ -138,6 +138,11 @@ def agendar_analise(document_id) -> None:
 
 
 def _executar_sem_propagar(document_id: str) -> None:
+    # A primeira tentativa começa aqui, quando a thread do pool pega o documento.
+    # É daqui que conta o teto do batimento, e não do agendamento: a espera na
+    # fila não é tempo da análise.
+    with _cond:
+        _inicio[document_id] = _relogio()
     # Exceção que escapa de uma Future some sem log. executar_analise já trata
     # tudo, isto é só a rede de baixo.
     try:
@@ -153,9 +158,20 @@ def _executar_sem_propagar(document_id: str) -> None:
 # fila ou rodando. Sem análise em andamento, não há thread nem consulta periódica,
 # e o serviço pode dormir.
 
+#
+# O batimento tem teto: passado ANALYSIS_MAX_DURATION_MINUTES do início da
+# primeira tentativa, o documento deixa de ser renovado. Uma thread travada (uma
+# chamada que não volta, um laço) não pode manter o documento vivo para sempre:
+# sem batimento, ele vira órfão no prazo normal e o usuário recebe o erro. A
+# thread em si não tem como ser interrompida em Python e segue ocupando a vaga
+# no pool até terminar, se terminar.
+
 _em_execucao: set[str] = set()
+_inicio: dict[str, float] = {}      # documento -> início da primeira tentativa
+_estourados: set[str] = set()       # já passaram do teto; só para logar uma vez
 _batimento: Optional[threading.Thread] = None
 _cond = threading.Condition()
+_relogio: Callable[[], float] = time.monotonic
 
 
 def _registrar(document_id: str) -> None:
@@ -170,7 +186,32 @@ def _registrar(document_id: str) -> None:
 def _desregistrar(document_id: str) -> None:
     with _cond:
         _em_execucao.discard(document_id)
+        _inicio.pop(document_id, None)
+        _estourados.discard(document_id)
         _cond.notify_all()
+
+
+def _renovaveis() -> list[str]:
+    """Documentos que o batimento ainda deve renovar. Chamar com `_cond` em mãos.
+
+    Quem ainda espera na fila não tem início e é sempre renovado.
+    """
+    teto = settings.ANALYSIS_MAX_DURATION_MINUTES * 60
+    agora = _relogio()
+    ids = []
+    for doc_id in _em_execucao:
+        inicio = _inicio.get(doc_id)
+        if inicio is not None and agora - inicio > teto:
+            if doc_id not in _estourados:
+                _estourados.add(doc_id)
+                logger.error(
+                    "Análise do documento %s passou de %s minutos; o batimento parou "
+                    "e ele será dado como órfão",
+                    doc_id, settings.ANALYSIS_MAX_DURATION_MINUTES,
+                )
+            continue
+        ids.append(doc_id)
+    return ids
 
 
 def _bater() -> None:
@@ -180,7 +221,7 @@ def _bater() -> None:
             if not _em_execucao:
                 _batimento = None
                 return
-            ids = list(_em_execucao)
+            ids = _renovaveis()
         tocar_em_andamento(ids, _default_session)
         with _cond:
             _cond.wait_for(lambda: not _em_execucao, timeout=BATIMENTO_SEGUNDOS)
