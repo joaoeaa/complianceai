@@ -20,9 +20,6 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://compliance_user:compliance_pass@localhost:5432/compliance_db"
     DATABASE_URL_SYNC: str = "postgresql://compliance_user:compliance_pass@localhost:5432/compliance_db"
 
-    # ─── Redis ───
-    REDIS_URL: str = "redis://localhost:6379/0"
-
     # ─── Auth ───
     SECRET_KEY: str = "change-me-in-production-32-chars-minimum"
     JWT_ALGORITHM: str = "HS256"
@@ -49,12 +46,8 @@ class Settings(BaseSettings):
 
     # ─── Análise em background ───
     # Análises simultâneas no processo da api. Cada uma segura uma conexão com o
-    # banco e uma chamada longa à Anthropic; o worker Celery usava 2.
+    # banco e uma chamada longa à Anthropic.
     ANALYSIS_MAX_CONCURRENT: int = 2
-
-    # ─── Celery ───
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
     # ─── CORS ───
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"]
@@ -67,6 +60,9 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        # Variável que a aplicação não conhece é ignorada, e não erro de boot. Um
+        # .env antigo, com REDIS_URL e CELERY_* da época do worker, derrubava a api.
+        extra="ignore",
     )
 
 

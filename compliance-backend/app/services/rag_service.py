@@ -166,7 +166,7 @@ def ingest_legal_document_sync(
     chunk_size: int = 800,
     overlap: int = 100,
 ) -> Any:
-    """Ingest a legal document: chunk, embed, and store. SYNC version for Celery.
+    """Ingest a legal document: chunk, embed, and store. SYNC version, for scripts.
 
     Args:
         title: Display title of the legislation.
@@ -423,7 +423,7 @@ def build_legal_context_sync(
     top_k: int = 5,
     similarity_threshold: float = 0.3,
 ) -> List[Dict[str, str]]:
-    """Build legal context for prompt enrichment. SYNC version for Celery worker.
+    """Build legal context for prompt enrichment. SYNC version, for the background analysis.
 
     Builds a composite query from a document excerpt + rule criteria,
     then searches for relevant legislation chunks.

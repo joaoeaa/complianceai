@@ -28,10 +28,6 @@ openai>=1.14.0
 # Vector search (RAG)
 pgvector>=0.3.6
 
-# Async processing
-celery[redis]==5.4.0
-redis==5.2.1
-
 # PDF report generation
 weasyprint==63.1
 

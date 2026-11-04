@@ -1,9 +1,7 @@
 """Classificação das falhas da análise.
 
-Mora fora de `app/workers/tasks.py` por um motivo prático: aquele módulo carrega
-o Celery junto e por isso é substituído por mock em boa parte da suíte. Uma
-função de classificação que vive lá não pode ser testada de verdade, e um teste
-que importa o mock passa sozinho e falha acompanhado.
+Usada pelo retry de `app/services/analysis_runner.py`, que decide aqui se vale
+tentar de novo e quanto esperar.
 
 A mensagem devolvida aqui é a que chega à tela, então sai em português e sem
 jargão: o usuário via "RetryError[<Future at 0x7f02 state=finished raised

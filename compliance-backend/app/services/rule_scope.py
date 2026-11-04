@@ -12,7 +12,7 @@ compartilhadas, "desativar para mim" nao pode ser um UPDATE nelas: vira uma linh
 em `rule_overrides`, aplicada apenas dentro daquele escopo.
 
 As funcoes aqui montam os `select(...)`, sem executa-los, para servir tanto a API
-assincrona quanto o worker sincrono.
+assincrona quanto a analise sincrona, que roda em thread.
 """
 from __future__ import annotations
 

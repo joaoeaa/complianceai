@@ -46,7 +46,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 async def _rules_for_document(doc: Document, db: AsyncSession) -> list[dict]:
     """Regras que valem para este documento, no escopo dele.
 
-    O checklist do relatorio precisa refletir o mesmo conjunto que o worker usou
+    O checklist do relatorio precisa refletir o mesmo conjunto que a analise usou
     na analise. Buscar todas as regras da tabela vazava para o relatorio de uma
     conta os nomes das regras criadas por outras contas e equipes.
     """

@@ -8,9 +8,6 @@ muito faz o modelo ficar mais conservador nela.
 O agregado é sempre restrito ao escopo do documento em análise. Isso não é
 higiene estatística, é sigilo: os comentários entram no prompt em texto literal,
 e o revisor escreve neles sobre o contrato do próprio cliente.
-
-Mora aqui, e não no módulo do worker, porque o worker carrega o Celery junto e
-por isso é substituído por mock em boa parte da suíte.
 """
 from __future__ import annotations
 

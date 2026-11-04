@@ -2,7 +2,7 @@
 Embedding Service — generates vector embeddings via OpenAI API.
 
 Uses text-embedding-3-small (1536 dimensions) for cost-efficiency.
-Works in both sync (Celery worker) and async (FastAPI) contexts.
+Works in both sync (background analysis thread) and async (FastAPI) contexts.
 """
 import logging
 from typing import List
