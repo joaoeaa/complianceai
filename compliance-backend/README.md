@@ -140,7 +140,9 @@ O upload grava o documento, commita e agenda a análise num `ThreadPoolExecutor`
 
 - **Progresso**: cada etapa grava `documents.analysis_stage` e `analysis_progress`. O `GET /documents/{id}/status` devolve `"Etapa: <stage> (<n>%)"`, formato que o front interpreta.
 - **Retry**: até 3 tentativas, com as esperas de `analysis_errors.py` (mais longas para sobrecarga do provedor). Falha que não passa com insistência, como resposta longa demais, para na primeira. O documento só vira `error` quando não há mais tentativa.
-- **Restart**: sem fila externa, a análise que morre com o processo não volta. No startup, o que estiver em `processing` ou `uploaded` há mais de 10 minutos vira `error`. A margem deixa terminar a análise que ainda roda na instância antiga durante um deploy, e o preço é que uma análise interrompida há menos de 10 minutos só é marcada no boot seguinte.
+- **Análise órfã**: sem fila externa, a análise que morre com o processo não volta. `documents.analysis_updated_at` é o sinal de vida: muda a cada etapa, a cada nova tentativa e, enquanto o documento está na fila ou rodando, a cada 60s, por uma thread de batimento que só existe enquanto há análise em andamento. Órfã é a que está em `uploaded`/`processing` sem sinal de vida há mais de `ORPHAN_TIMEOUT_MINUTES` (padrão 12; sem a coluna, vale `uploaded_at`). Ela vira `error` na varredura do startup e, preguiçosamente, no `GET /documents/{id}/status` daquele documento.
+- **Por que o batimento**: a etapa `analyzing` é uma chamada só, e dentro dela o tenacity e o SDK da Anthropic retentam sem escrever nada, com até 300s por requisição. Só com etapas e tentativas, uma análise viva pareceria órfã. É também o batimento que protege, durante um deploy, a análise que ainda roda na instância antiga.
+- **A thread não desfaz um `error`**: toda escrita de status dela é condicional a `uploaded`/`processing`. Se o documento foi marcado por fora, ela para na próxima etapa, sem esperar o backoff, e a troca para `analyzed` vai na mesma transação da análise, que é desfeita junto.
 
 ### Storage
 

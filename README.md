@@ -286,6 +286,7 @@ um arquivo reinicia o processo e interrompe a análise em andamento.
 | `DATABASE_URL` | Conexão PostgreSQL (async) | `localhost:5432` |
 | `DATABASE_URL_SYNC` | Conexão PostgreSQL (síncrona), usada pela análise em background | `localhost:5432` |
 | `ANALYSIS_MAX_CONCURRENT` | Análises simultâneas dentro da API | `2` |
+| `ORPHAN_TIMEOUT_MINUTES` | Minutos sem sinal de vida até a análise ser dada como órfã | `12` |
 | `STORAGE_BACKEND` | Onde fica o arquivo original: `local` ou `s3` | `local` |
 | `UPLOAD_DIR` | Diretório do storage `local` | `./storage/uploads` |
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX` | Bucket do storage `s3` | prefixo `uploads/` |
@@ -412,7 +413,7 @@ docker compose exec api pytest
 cd compliance-backend && pytest
 ```
 
-São **376 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
+São **389 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
 
 Cobrem autenticação, documentos, regras e seu escopo, organizações, templates, workflows, webhooks, dashboard, extração de documentos, o analisador de IA, a geração de relatórios e, com atenção especial, os limites que sustentam a confiança na ferramenta: o sigilo por cliente, o isolamento do feedback entre contas e a recusa do expurgo fora do prazo.
 
@@ -508,7 +509,7 @@ Pontos que costumam morder:
 - `CORS_ORIGINS` precisa ser JSON válido. Uma variável definida e **vazia** derruba a API no boot.
 - O `VITE_API_URL` entra no build, não na execução. Alterá-lo exige um novo deploy.
 - Com `STORAGE_BACKEND=local`, `UPLOAD_DIR` é efêmero em plataformas de container, a menos que esteja num volume. As análises persistem no banco, mas o arquivo original some a cada redeploy. Com `s3`, isso não acontece.
-- Uma análise em andamento morre junto com o processo num redeploy. No boot seguinte, o que estiver em `processing` há mais de 10 minutos vira `error`, e o contrato precisa ser reenviado.
+- Uma análise em andamento morre junto com o processo num redeploy, e o contrato precisa ser reenviado. Ela vira `error` depois de `ORPHAN_TIMEOUT_MINUTES` (padrão 12) sem sinal de vida: na primeira consulta de status depois disso, ou no próximo boot.
 
 ---
 
@@ -566,7 +567,7 @@ Além deles, a avaliação geral da análise (1 a 5 estrelas) é gravada e relid
 ### Limitações conhecidas
 
 - **Arquivo original é efêmero** com `STORAGE_BACKEND=local` e sem volume. A análise persiste no banco; o PDF some a cada redeploy, e o download responde `410`. Com `s3`, o arquivo fica no bucket.
-- **Análise interrompida não é retomada.** Sem fila externa, a análise que estava rodando num restart ou deploy se perde; o documento é marcado como `error` no boot seguinte, se tiver mais de 10 minutos.
+- **Análise interrompida não é retomada.** Sem fila externa, a análise que estava rodando num restart ou deploy se perde. O documento vira `error` quando passa `ORPHAN_TIMEOUT_MINUTES` sem sinal de vida, na consulta de status ou no boot. Até alguém consultar ou a API reiniciar, a listagem ainda o mostra em `processing`.
 - **Comparação entre versões** de um mesmo contrato ainda não existe.
 - **Sem muralha absoluta**: `owner` e `admin` enxergam todos os clientes por desenho. Não há hoje a figura do cliente restrito, em que nem o sócio entra sem designação.
 
