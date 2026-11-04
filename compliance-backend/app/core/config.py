@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Análises simultâneas no processo da api. Cada uma segura uma conexão com o
     # banco e uma chamada longa à Anthropic.
     ANALYSIS_MAX_CONCURRENT: int = 2
+    # Sem sinal de vida por este tempo, a análise é dada como órfã e vira erro.
+    # Precisa passar com folga do intervalo do batimento (60s) e do maior intervalo
+    # entre duas atualizações sem batimento: uma chamada ao LLM mais o backoff.
+    ORPHAN_TIMEOUT_MINUTES: int = 12
 
     # ─── CORS ───
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"]

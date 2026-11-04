@@ -126,6 +126,10 @@ class Document(Base):
     # para que o status sobreviva a um restart e seja o mesmo em qualquer instancia.
     analysis_stage = Column(String(50), nullable=True)
     analysis_progress = Column(Integer, nullable=True)
+    # Ultimo sinal de vida da analise: muda a cada etapa, a cada tentativa e a cada
+    # batimento enquanto o documento esta na fila ou rodando. E por ele que se sabe
+    # que nenhum processo cuida mais do documento (ver services/analysis_runner.py).
+    analysis_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     owner = relationship("User", back_populates="documents")
     analysis = relationship("Analysis", back_populates="document", uselist=False, cascade="all, delete-orphan")
