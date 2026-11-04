@@ -35,7 +35,7 @@ Upload (PDF/DOCX)
 Extração de texto ──── pdfplumber · python-docx · Tesseract OCR
        │
        ▼
-Enfileiramento Celery (status: processing)
+Análise em background, numa thread da própria API (status: processing)
        │
        ├─▶ Carrega regras de conformidade ativas do banco
        ├─▶ RAG: busca semântica na base legal (pgvector + embeddings OpenAI)
@@ -124,7 +124,8 @@ Nada é apagado sozinho. Os documentos vencidos entram numa fila que alguém rev
 - FastAPI · Python 3.11+
 - PostgreSQL 15 + [pgvector](https://github.com/pgvector/pgvector)
 - SQLAlchemy 2 (async) + Alembic
-- Celery + Redis (processamento assíncrono)
+- Análise em background num pool de threads da própria API, sem fila externa
+- Arquivo original em disco local ou bucket S3 (Supabase Storage, Cloudflare R2, AWS)
 - Anthropic Claude (análise) · OpenAI `text-embedding-3-small` (embeddings)
 - JWT + bcrypt · SlowAPI (rate limiting) · structlog
 
@@ -166,14 +167,16 @@ compliance-project/
 │   │   │   ├── audit.py              # Registro de acesso
 │   │   │   ├── feedback_learning.py  # Agregado de feedback, restrito ao escopo
 │   │   │   ├── analysis_errors.py    # Classifica falhas da análise em mensagem útil
+│   │   │   ├── analysis_runner.py    # Análise em background: pipeline, retry, progresso
+│   │   │   ├── storage.py            # Arquivo original: disco local ou bucket S3
 │   │   │   └── webhook_service.py
 │   │   ├── scripts/          # Seeds de legislação e das regras padrão
-│   │   ├── workers/          # Tasks Celery
 │   │   └── main.py
 │   ├── alembic/              # Migrations
 │   ├── tests/                # Pytest
 │   ├── docker-compose.yml
-│   └── Dockerfile
+│   ├── Dockerfile
+│   └── railway.toml          # Deploy: migrations + uvicorn
 └── compliance-frontend/
     ├── src/
     └── vite.config.js
@@ -213,7 +216,7 @@ Edite o `.env` e preencha `ANTHROPIC_API_KEY` e `OPENAI_API_KEY`.
 docker compose up -d
 ```
 
-Isso sobe quatro containers: PostgreSQL (com pgvector), Redis, a API na porta `8000` e o worker Celery.
+Isso sobe dois containers: PostgreSQL (com pgvector) e a API na porta `8000`, que também roda as análises.
 
 No primeiro boot em modo `development`, a aplicação cria as tabelas, popula as regras padrão e faz o seed da base legal automaticamente (idempotente).
 
@@ -250,7 +253,7 @@ senha:    senha123
 <details>
 <summary>Passo a passo</summary>
 
-Requer PostgreSQL 15+ com a extensão `vector`, Redis 7+ e, opcionalmente, Tesseract OCR para PDFs escaneados.
+Requer PostgreSQL 15+ com a extensão `vector` e, opcionalmente, Tesseract OCR para PDFs escaneados.
 
 ```bash
 cd compliance-backend
@@ -258,17 +261,14 @@ python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env              # configure DB, Redis e as chaves de API
+cp .env.example .env              # configure o DB e as chaves de API
 createdb compliance_db
 
 uvicorn app.main:app --reload --port 8000
 ```
 
-Em outro terminal:
-
-```bash
-celery -A app.workers.tasks.celery_app worker --loglevel=info
-```
+É um processo só: a análise roda numa thread da própria API. Com `--reload`, salvar
+um arquivo reinicia o processo e interrompe a análise em andamento.
 
 </details>
 
@@ -284,9 +284,14 @@ celery -A app.workers.tasks.celery_app worker --loglevel=info
 | `OPENAI_API_KEY` | Chave da API OpenAI (embeddings) | **obrigatório** |
 | `OPENAI_EMBEDDING_MODEL` | Modelo de embedding | `text-embedding-3-small` |
 | `DATABASE_URL` | Conexão PostgreSQL (async) | `localhost:5432` |
-| `REDIS_URL` | Conexão Redis | `localhost:6379/0` |
+| `DATABASE_URL_SYNC` | Conexão PostgreSQL (síncrona), usada pela análise em background | `localhost:5432` |
+| `ANALYSIS_MAX_CONCURRENT` | Análises simultâneas dentro da API | `2` |
+| `STORAGE_BACKEND` | Onde fica o arquivo original: `local` ou `s3` | `local` |
+| `UPLOAD_DIR` | Diretório do storage `local` | `./storage/uploads` |
+| `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX` | Bucket do storage `s3` | prefixo `uploads/` |
 | `SECRET_KEY` | Assinatura dos JWTs | **trocar em produção** |
 | `APP_ENV` | `development` habilita auto-create e seeds | `development` |
+| `DEBUG` | Loga cada consulta SQL e baixa o log para DEBUG | `false` |
 | `MAX_FILE_SIZE_MB` | Tamanho máximo de upload | `10` |
 | `CORS_ORIGINS` | Origens permitidas | `localhost:5173`, ... |
 
@@ -407,7 +412,7 @@ docker compose exec api pytest
 cd compliance-backend && pytest
 ```
 
-São **350 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
+São **376 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
 
 Cobrem autenticação, documentos, regras e seu escopo, organizações, templates, workflows, webhooks, dashboard, extração de documentos, o analisador de IA, a geração de relatórios e, com atenção especial, os limites que sustentam a confiança na ferramenta: o sigilo por cliente, o isolamento do feedback entre contas e a recusa do expurgo fora do prazo.
 
@@ -455,6 +460,8 @@ docker compose exec api alembic revision --autogenerate -m "descricao"
 
 Em `APP_ENV=development` as tabelas são criadas automaticamente no startup. **Em produção, use Alembic**. O auto-create é desativado fora de `development`.
 
+No Railway, o `startCommand` do `railway.toml` roda `alembic upgrade head` a cada deploy, antes de subir a API.
+
 Em um banco novo de produção, depois das migrations, popule a base:
 
 ```bash
@@ -479,24 +486,29 @@ a mão e foi substituído por este.
 
 ## Deploy
 
-O projeto vai para o ar em dois lugares, porque o Vercel não roda containers de longa duração e o worker Celery precisa de um processo vivo:
+O projeto vai para o ar em dois lugares, porque o Vercel não roda containers de longa duração e a análise roda dentro da API, que precisa ficar de pé enquanto ela dura:
 
 | Parte | Onde | Como |
 |---|---|---|
 | Frontend | Vercel | Root Directory `compliance-frontend`, preset Vite, variável `VITE_API_URL` |
-| API + worker | Railway (ou similar) | Dois serviços do mesmo `Dockerfile`, mudando o comando de início |
+| API | Railway (ou similar) | Um serviço, do `Dockerfile`, configurado pelo `compliance-backend/railway.toml` |
 | Postgres | Railway | Imagem `pgvector/pgvector:pg15`, com volume em `/var/lib/postgresql/data` |
-| Redis | Railway | Serviço gerenciado |
+| Arquivo original | Bucket S3 ou volume | `STORAGE_BACKEND=s3` com Supabase Storage ou R2, ou `local` com um volume em `UPLOAD_DIR` |
+
+Não há worker nem Redis: a análise roda num pool de threads da própria API, e o progresso fica no banco.
+
+O Railway não procura o `railway.toml` dentro do Root Directory. Com o serviço apontado para `compliance-backend`, configure em **Settings > Config-as-code** o caminho `/compliance-backend/railway.toml`.
 
 A ordem importa, porque cada lado precisa da URL do outro: publique a API, use a URL dela em `VITE_API_URL`, publique o frontend e então preencha `CORS_ORIGINS` no backend com o domínio gerado.
 
 Pontos que costumam morder:
 
-- **A plataforma não roda as migrations no build.** O container novo sobe com o modelo pedindo colunas que ainda não existem, e a aplicação responde `500` com `UndefinedTable` ou `UndefinedColumn`. Rode `alembic upgrade head` logo depois do push, por dentro do container: `railway ssh --service api`. O `railway run` executa na sua máquina e não resolve o hostname interno do banco.
+- **As migrations rodam no start, não no build.** O `startCommand` do `railway.toml` faz `alembic upgrade head` antes do `uvicorn`; se ela falha, o healthcheck em `/health` não passa e o deploy anterior continua no ar. Fora do Railway, rode `alembic upgrade head` antes de subir a versão nova, ou o container responde `500` com `UndefinedTable` ou `UndefinedColumn`.
 - O Postgres padrão não traz a extensão `vector`. Sem ela, o RAG não existe.
 - `CORS_ORIGINS` precisa ser JSON válido. Uma variável definida e **vazia** derruba a API no boot.
 - O `VITE_API_URL` entra no build, não na execução. Alterá-lo exige um novo deploy.
-- `storage/uploads` é efêmero em plataformas de container. As análises persistem no banco, mas o arquivo original some a cada redeploy.
+- Com `STORAGE_BACKEND=local`, `UPLOAD_DIR` é efêmero em plataformas de container, a menos que esteja num volume. As análises persistem no banco, mas o arquivo original some a cada redeploy. Com `s3`, isso não acontece.
+- Uma análise em andamento morre junto com o processo num redeploy. No boot seguinte, o que estiver em `processing` há mais de 10 minutos vira `error`, e o contrato precisa ser reenviado.
 
 ---
 
@@ -522,9 +534,9 @@ Vale ser explícito, porque a interface já afirmou o contrário e isso foi corr
 |---|---|
 | Tráfego entre navegador e API | Cifrado por HTTPS |
 | Senha | Hash bcrypt, não é criptografia reversível |
-| **Arquivo enviado, em disco** | **Gravado em claro** |
+| **Arquivo enviado, no storage (disco ou bucket)** | **Gravado em claro** |
 | **Texto extraído, na coluna `documents.extracted_text`** | **Em claro** |
-| Disco do servidor e do banco | Depende do que a plataforma de hospedagem aplica ao volume, fora do controle da aplicação |
+| Disco do servidor, do bucket e do banco | Depende do que a plataforma de hospedagem aplica ao volume ou ao bucket, fora do controle da aplicação |
 
 A aplicação **não** implementa criptografia em repouso. Quem tiver acesso ao
 volume ou ao banco lê o conteúdo dos contratos. As proteções que existem são de
@@ -553,7 +565,8 @@ Além deles, a avaliação geral da análise (1 a 5 estrelas) é gravada e relid
 
 ### Limitações conhecidas
 
-- **Arquivo original é efêmero** em plataformas de container. A análise persiste no banco; o PDF some a cada redeploy, e o download responde `410`.
+- **Arquivo original é efêmero** com `STORAGE_BACKEND=local` e sem volume. A análise persiste no banco; o PDF some a cada redeploy, e o download responde `410`. Com `s3`, o arquivo fica no bucket.
+- **Análise interrompida não é retomada.** Sem fila externa, a análise que estava rodando num restart ou deploy se perde; o documento é marcado como `error` no boot seguinte, se tiver mais de 10 minutos.
 - **Comparação entre versões** de um mesmo contrato ainda não existe.
 - **Sem muralha absoluta**: `owner` e `admin` enxergam todos os clientes por desenho. Não há hoje a figura do cliente restrito, em que nem o sócio entra sem designação.
 

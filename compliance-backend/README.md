@@ -11,19 +11,18 @@ API FastAPI que faz a análise de conformidade contratual.
 
 ```bash
 cp .env.example .env          # preencha ANTHROPIC_API_KEY e OPENAI_API_KEY
-docker compose up -d          # postgres + redis + api + worker
+docker compose up -d          # postgres + api
 ```
 
 API em `:8000`, Swagger em `/docs`.
 
-Fora do Docker, são dois processos, a API e o worker Celery:
+Fora do Docker, é um processo só:
 
 ```bash
 uvicorn app.main:app --reload --port 8000
-celery -A app.workers.tasks.celery_app worker --loglevel=info
 ```
 
-O worker é obrigatório: o upload apenas enfileira a análise. Sem worker rodando, o documento fica travado em `processing`.
+A análise roda numa thread da própria API (ver [Análise em background](#análise-em-background)). Não há worker nem Redis.
 
 ---
 
@@ -53,12 +52,9 @@ app/
 ├── services/     # Regra de negócio: sem dependência de FastAPI
 │                 #   scope.py e rule_scope.py concentram as checagens de acesso;
 │                 #   se uma autorização não passa por ali, ela vai divergir
-│                 #   feedback_learning.py e analysis_errors.py moram aqui, e não
-│                 #   em workers/, porque aquele módulo carrega o Celery junto e
-│                 #   por isso é substituído por mock em boa parte da suíte:
-│                 #   lógica que vive lá não consegue ser testada de verdade
+│                 #   analysis_runner.py roda a análise em background;
+│                 #   storage.py guarda o arquivo original (disco ou bucket S3)
 ├── scripts/      # Seeds de legislação e manutenção de embeddings
-├── workers/      # Tasks Celery
 └── main.py       # Wiring: rotas, middleware, lifespan
 ```
 
@@ -75,7 +71,9 @@ O `lifespan` em `main.py` só executa em `APP_ENV=development`:
 3. Seed do usuário admin e das regras de conformidade padrão
 4. Seed da base legal
 
-Tudo idempotente. **Em produção nada disso roda**: use `alembic upgrade head` e crie os usuários manualmente.
+Tudo idempotente. **Em produção nada disso roda**: use `alembic upgrade head` e crie os usuários manualmente. No Railway, o `startCommand` do `railway.toml` já roda as migrations a cada deploy.
+
+Em qualquer ambiente, o startup também marca como `error` as análises interrompidas por um restart (ver abaixo).
 
 ---
 
@@ -116,7 +114,7 @@ Outros scripts:
 
 ## Pipeline de análise
 
-`workers/tasks.py` orquestra:
+`services/analysis_runner.py` orquestra, numa thread do pool da API:
 
 ```
 texto do documento      já extraído no upload, em documents.extracted_text
@@ -134,7 +132,19 @@ annotate_alerts()       services/verification         confere trecho e artigo co
 persiste Analysis       status: analyzed
 ```
 
-O texto é extraído **no upload**, e não aqui: API e worker são containers separados em produção e não compartilham disco, então o texto viaja pelo banco em vez de pelo arquivo.
+O texto é extraído **no upload**, e não aqui: o arquivo pode estar num bucket, e a extração precisa de um caminho local. O upload extrai de uma cópia temporária e grava o texto no banco; a análise não volta a ler o arquivo.
+
+### Análise em background
+
+O upload grava o documento, commita e agenda a análise num `ThreadPoolExecutor` da própria API, e responde na hora. O pool é próprio, e não o threadpool do Starlette, porque uma análise leva minutos e não deve ocupar a vaga que o upload e o PDF usam via `asyncio.to_thread`. O tamanho dele, `ANALYSIS_MAX_CONCURRENT` (padrão 2), é o limite de análises simultâneas.
+
+- **Progresso**: cada etapa grava `documents.analysis_stage` e `analysis_progress`. O `GET /documents/{id}/status` devolve `"Etapa: <stage> (<n>%)"`, formato que o front interpreta.
+- **Retry**: até 3 tentativas, com as esperas de `analysis_errors.py` (mais longas para sobrecarga do provedor). Falha que não passa com insistência, como resposta longa demais, para na primeira. O documento só vira `error` quando não há mais tentativa.
+- **Restart**: sem fila externa, a análise que morre com o processo não volta. No startup, o que estiver em `processing` ou `uploaded` há mais de 10 minutos vira `error`. A margem deixa terminar a análise que ainda roda na instância antiga durante um deploy, e o preço é que uma análise interrompida há menos de 10 minutos só é marcada no boot seguinte.
+
+### Storage
+
+`services/storage.py`, escolhido por `STORAGE_BACKEND`: `local` grava em `UPLOAD_DIR`; `s3` grava num bucket compatível com S3 (Supabase Storage, Cloudflare R2, AWS), configurado pelas variáveis `S3_*` do `.env.example`. `documents.file_path` guarda a chave `<uuid><ext>`. Upload, download, exclusão e expurgo por retenção passam todos por ali, e o arquivo é apagado antes do registro, para nunca sobrar contrato no storage sem registro que leve a ele.
 
 A verificação não descarta alerta nenhum, apenas rotula. Um trecho não localizado pode ser paráfrase correta, e um artigo fora do top-k recuperado pode estar certo assim mesmo. O objetivo é dizer ao revisor onde confiar e onde ir conferir na fonte.
 
@@ -148,7 +158,7 @@ constante.
 
 ## Testes
 
-Rodam contra SQLite (`aiosqlite`, arquivo `test.db`), com as chamadas de IA mockadas: a suíte não consome créditos de API nem exige Postgres ou Redis no ar. O rate limiting é desligado via `RATE_LIMIT_ENABLED=false` em `pyproject.toml`.
+Rodam contra SQLite (`aiosqlite`, arquivo `test.db`), com as chamadas de IA mockadas: a suíte não consome créditos de API nem exige Postgres no ar. O `conftest.py` troca o agendamento da análise por um registro (fixture `analises_agendadas`) e o storage por um diretório temporário por teste; a execução da análise em si é testada em `test_analysis_runner.py`. O rate limiting é desligado via `RATE_LIMIT_ENABLED=false` em `pyproject.toml`.
 
 As foreign keys do SQLite são ativadas no `conftest.py`. Sem isso, `CASCADE` e `SET NULL` não valem no teste e a suíte passa a aprovar exclusão que deixa órfão.
 
