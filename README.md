@@ -287,7 +287,7 @@ um arquivo reinicia o processo e interrompe a análise em andamento.
 | `DATABASE_URL_SYNC` | Conexão PostgreSQL (síncrona), usada pela análise em background | `localhost:5432` |
 | `ANALYSIS_MAX_CONCURRENT` | Análises simultâneas dentro da API | `2` |
 | `ORPHAN_TIMEOUT_MINUTES` | Minutos sem sinal de vida até a análise ser dada como órfã | `12` |
-| `ANALYSIS_MAX_DURATION_MINUTES` | Teto do batimento, contado do início da primeira tentativa | `30` |
+| `ANALYSIS_MAX_DURATION_MINUTES` | Teto do batimento, contado do início da primeira tentativa; precisa cobrir o pior caso de uma análise (~55 min com os padrões) | `60` |
 | `STORAGE_BACKEND` | Onde fica o arquivo original: `local` ou `s3` | `local` |
 | `UPLOAD_DIR` | Diretório do storage `local` | `./storage/uploads` |
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX` | Bucket do storage `s3` | prefixo `uploads/` |
@@ -414,7 +414,7 @@ docker compose exec api pytest
 cd compliance-backend && pytest
 ```
 
-São **392 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
+São **400 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
 
 Cobrem autenticação, documentos, regras e seu escopo, organizações, templates, workflows, webhooks, dashboard, extração de documentos, o analisador de IA, a geração de relatórios e, com atenção especial, os limites que sustentam a confiança na ferramenta: o sigilo por cliente, o isolamento do feedback entre contas e a recusa do expurgo fora do prazo.
 
