@@ -65,6 +65,21 @@ async def setup_db():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def analises_agendadas(monkeypatch) -> list:
+    """Troca o agendamento da análise por um registro dos ids agendados.
+
+    A análise real abre uma engine síncrona contra o Postgres e chama a IA; nenhum
+    teste de rota deve chegar lá. Quem quiser conferir o agendamento pede esta
+    fixture pelo nome. A execução em si é testada em test_analysis_runner.py.
+    """
+    agendadas: list = []
+    monkeypatch.setattr(
+        "app.api.documents.agendar_analise", lambda doc_id: agendadas.append(str(doc_id))
+    )
+    return agendadas
+
+
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing FastAPI endpoints."""

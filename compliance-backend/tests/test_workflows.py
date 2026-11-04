@@ -3,15 +3,6 @@ Integration tests for the Approval Workflows API (FASE 3).
 
 Tests cover workflow creation, state transitions, permissions, and listing.
 """
-import sys
-from unittest.mock import MagicMock
-
-# ─── Mock Celery/Redis ───
-_fake_task_result = MagicMock()
-_fake_task_result.id = "fake-celery-task-id"
-_mock_tasks = MagicMock()
-_mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
-sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
 from functools import lru_cache
 

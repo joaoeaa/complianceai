@@ -3,15 +3,7 @@ Integration tests for the Webhooks API + unit tests for webhook_service (FASE 3)
 
 Webhook CRUD is admin-only. The service tests mock httpx to avoid real HTTP calls.
 """
-import sys
 from unittest.mock import MagicMock, patch, AsyncMock
-
-# ─── Mock Celery/Redis ───
-_fake_task_result = MagicMock()
-_fake_task_result.id = "fake-celery-task-id"
-_mock_tasks = MagicMock()
-_mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
-sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
 import pytest
 from httpx import AsyncClient

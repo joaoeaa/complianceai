@@ -3,15 +3,6 @@ Integration tests for the Organizations API (FASE 2).
 
 Tests cover CRUD operations, member management, and permission checks.
 """
-import sys
-from unittest.mock import MagicMock
-
-# ─── Mock Celery/Redis (same pattern as test_documents.py) ───
-_fake_task_result = MagicMock()
-_fake_task_result.id = "fake-celery-task-id"
-_mock_tasks = MagicMock()
-_mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
-sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
 import pytest
 from httpx import AsyncClient

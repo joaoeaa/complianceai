@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./storage/uploads"
     MAX_FILE_SIZE_MB: int = 10
 
+    # ─── Análise em background ───
+    # Análises simultâneas no processo da api. Cada uma segura uma conexão com o
+    # banco e uma chamada longa à Anthropic; o worker Celery usava 2.
+    ANALYSIS_MAX_CONCURRENT: int = 2
+
     # ─── Celery ───
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"

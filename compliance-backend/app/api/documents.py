@@ -26,6 +26,7 @@ from app.schemas import (
     AnalysisStatusResponse, AlertResolutionUpdate,
 )
 from app.services.document_extractor import get_mime_type, extract_text
+from app.services.analysis_runner import agendar_analise
 from app.services.audit import record_access
 from app.services.scope import (
     can_read_client,
@@ -204,14 +205,15 @@ async def upload_document(
 
     await record_access(db, user=current_user, action="analyze", document=doc)
 
-    # Trigger async analysis via Celery
-    from app.workers.tasks import analyze_document_task
-    task = analyze_document_task.delay(str(doc.id))
+    # A análise roda numa thread com sessão própria, que só enxerga o documento
+    # depois do commit. Por isso o commit vem antes do agendamento, e não no fim
+    # do request como nas outras rotas.
+    await db.commit()
+    agendar_analise(doc.id)
 
     return AnalysisStatusResponse(
         document_id=doc.id,
         status="uploaded",
-        task_id=task.id,
         message=f"Documento '{file.filename}' recebido. Análise iniciada.",
     )
 
@@ -355,16 +357,11 @@ async def get_analysis_status(
     """Poll the analysis status of a document."""
     doc = await get_document_for_read(document_id, current_user, db)
 
-    # Check Celery task status if task_id provided
+    # A etapa e o percentual são gravados pela thread da análise. O formato da
+    # mensagem é o que o front interpreta para mostrar a barra de progresso.
     message = ""
-    if task_id:
-        from app.workers.tasks import celery_app
-        task_result = celery_app.AsyncResult(task_id)
-        if task_result.state == "PROGRESS":
-            meta = task_result.info or {}
-            message = f"Etapa: {meta.get('stage', '...')} ({meta.get('progress', 0)}%)"
-        elif task_result.state == "FAILURE":
-            message = f"Erro: {str(task_result.result)}"
+    if doc.status in ("uploaded", "processing") and doc.analysis_stage:
+        message = f"Etapa: {doc.analysis_stage} ({doc.analysis_progress or 0}%)"
 
     # Get risk score if analyzed
     risk_score = None

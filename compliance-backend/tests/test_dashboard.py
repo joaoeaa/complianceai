@@ -4,16 +4,7 @@ Integration tests for the Dashboard & Analytics API (FASE 4).
 Tests cover overview metrics, alert aggregation, feedback CRUD,
 and permission checks.
 """
-import sys
 import uuid
-from unittest.mock import MagicMock
-
-# ─── Mock Celery/Redis ───
-_fake_task_result = MagicMock()
-_fake_task_result.id = "fake-celery-task-id"
-_mock_tasks = MagicMock()
-_mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
-sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
 from functools import lru_cache
 

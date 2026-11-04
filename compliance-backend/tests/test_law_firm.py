@@ -4,20 +4,12 @@ O que estes testes protegem é o motivo de a ferramenta poder entrar num
 escritório: um advogado não designado a um caso não pode ler o caso, quem leu
 fica registrado, e nada é apagado sem alguém mandar.
 """
-import sys
 import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from unittest.mock import MagicMock
 
 import pytest
 from httpx import AsyncClient
-
-_fake = MagicMock()
-_fake.id = "fake-task"
-_mock = MagicMock()
-_mock.analyze_document_task.delay.return_value = _fake
-sys.modules.setdefault("app.workers.tasks", _mock)
 
 
 @lru_cache(maxsize=1)

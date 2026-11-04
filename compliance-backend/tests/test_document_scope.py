@@ -3,19 +3,10 @@
 Regra combinada: dentro de uma equipe todos os membros leem os documentos uns dos
 outros, mas só quem enviou e os responsáveis pela equipe podem excluir.
 """
-import sys
 from functools import lru_cache
-from unittest.mock import MagicMock
 
 import pytest
 from httpx import AsyncClient
-
-# ─── Mock Celery/Redis ───
-_fake_task_result = MagicMock()
-_fake_task_result.id = "fake-celery-task-id"
-_mock_tasks = MagicMock()
-_mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
-sys.modules.setdefault("app.workers.tasks", _mock_tasks)
 
 
 @lru_cache(maxsize=1)

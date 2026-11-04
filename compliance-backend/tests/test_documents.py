@@ -4,34 +4,18 @@ Integration tests for document endpoints.
 Covers: upload, list, get, status polling, delete,
 and report (JSON / HTML / PDF) endpoints.
 
-Celery tasks are mocked via sys.modules to prevent
-Redis/worker connections during tests.
+The background analysis is replaced by a recorder in conftest.py
+(`analises_agendadas`), so no test reaches the AI or a sync database.
 """
-import sys
 import uuid
 from functools import lru_cache
-from unittest.mock import MagicMock
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-# ─── Mock Celery worker module before any test triggers its import ────────────
-# The tasks module creates a Celery instance and a sync SQLAlchemy engine on
-# import, which would fail without running Redis/Postgres. Replacing it with a
-# MagicMock lets the API's lazy `from app.workers.tasks import ...` calls
-# resolve cleanly in-process.
-_fake_task_result = MagicMock()
-_fake_task_result.id = "fake-celery-task-id"
-
-_mock_tasks = MagicMock()
-_mock_tasks.analyze_document_task.delay.return_value = _fake_task_result
-_mock_tasks.celery_app.AsyncResult.return_value.state = "PENDING"
-
-sys.modules["app.workers.tasks"] = _mock_tasks
-
-from app import Document, Analysis  # noqa: E402  (after sys.modules patch)
+from app import Document, Analysis
 
 # ─── WeasyPrint availability check ───────────────────────────────────────────
 # WeasyPrint requires GTK native libraries that may be absent on Windows.
@@ -100,15 +84,15 @@ def _upload(client, headers, filename="doc.pdf", content=None, mime=None):
 # ─── Upload ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_upload_pdf_success(client: AsyncClient, auth_headers: dict):
-    """Authenticated user can upload a PDF and receives a task ID."""
+async def test_upload_pdf_success(client: AsyncClient, auth_headers: dict, analises_agendadas: list):
+    """Authenticated user can upload a PDF, and its analysis is scheduled."""
     resp = await _upload(client, auth_headers, "contrato.pdf")
 
     assert resp.status_code == 201
     data = resp.json()
     assert "document_id" in data
     assert data["status"] == "uploaded"
-    assert data["task_id"] == "fake-celery-task-id"
+    assert analises_agendadas == [data["document_id"]]
     assert "contrato.pdf" in data["message"]
 
 
@@ -279,12 +263,8 @@ async def test_status_after_upload_is_uploaded(client: AsyncClient, auth_headers
     """Status endpoint returns 'uploaded' immediately after upload."""
     upload = await _upload(client, auth_headers, "status_test.pdf")
     doc_id = upload.json()["document_id"]
-    task_id = upload.json()["task_id"]
 
-    resp = await client.get(
-        f"/api/v1/documents/{doc_id}/status?task_id={task_id}",
-        headers=auth_headers,
-    )
+    resp = await client.get(f"/api/v1/documents/{doc_id}/status", headers=auth_headers)
 
     assert resp.status_code == 200
     data = resp.json()

@@ -1,17 +1,9 @@
 """Marcação de alertas pelo revisor: corrigir, descartar, dar por tratado."""
-import sys
 import uuid as _uuid
 from functools import lru_cache
-from unittest.mock import MagicMock
 
 import pytest
 from httpx import AsyncClient
-
-_fake = MagicMock()
-_fake.id = "fake-task"
-_mock = MagicMock()
-_mock.analyze_document_task.delay.return_value = _fake
-sys.modules.setdefault("app.workers.tasks", _mock)
 
 
 @lru_cache(maxsize=1)

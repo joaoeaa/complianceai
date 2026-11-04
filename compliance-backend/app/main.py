@@ -52,10 +52,31 @@ async def lifespan(app: FastAPI):
         # Seed legal database (all legislation — idempotent)
         await _seed_legal_database()
 
+    await _recover_orphan_analyses()
+
     yield
 
     logger.info("🛑 Shutting down...")
     await engine.dispose()
+
+
+async def _recover_orphan_analyses():
+    """Marca como erro as análises interrompidas por um restart ou deploy.
+
+    A análise roda numa thread deste processo; se ele morre, ninguém retoma. Sem
+    isto o documento ficaria em `processing` para sempre. Falhar aqui não impede o
+    boot: o pior caso é o documento continuar preso até o próximo restart.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.analysis_runner import marcar_analises_orfas
+
+    try:
+        async with AsyncSessionLocal() as db:
+            marcados = await marcar_analises_orfas(db)
+        if marcados:
+            logger.warning(f"⚠️ {marcados} análise(s) interrompida(s) marcada(s) como erro")
+    except Exception as e:
+        logger.warning(f"⚠️ Recuperação de análises interrompidas falhou: {e}")
 
 
 async def _seed_defaults():
