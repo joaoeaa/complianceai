@@ -122,6 +122,10 @@ class Document(Base):
     client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     template_id = Column(UUID(as_uuid=True), ForeignKey("contract_templates.id", ondelete="SET NULL"), nullable=True)
     extracted_text = Column(Text, nullable=True)  # stores the extracted text for reprocessing
+    # Etapa e percentual da analise em andamento. Ficam no banco, e nao em memoria,
+    # para que o status sobreviva a um restart e seja o mesmo em qualquer instancia.
+    analysis_stage = Column(String(50), nullable=True)
+    analysis_progress = Column(Integer, nullable=True)
 
     owner = relationship("User", back_populates="documents")
     analysis = relationship("Analysis", back_populates="document", uselist=False, cascade="all, delete-orphan")
