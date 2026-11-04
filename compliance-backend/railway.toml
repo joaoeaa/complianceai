@@ -1,0 +1,18 @@
+# Deploy da api no Railway: um serviço só, sem worker nem Redis.
+#
+# O Railway não procura este arquivo dentro do Root Directory. Com o serviço
+# apontado para compliance-backend, configure em Settings > Config-as-code o
+# caminho /compliance-backend/railway.toml.
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+# As migrations rodam a cada deploy, antes de a api subir. Sem isto, o container
+# novo subia pedindo colunas que ainda não existiam e respondia 500 até alguém
+# rodar o alembic na mão. Se a migration falha, a api não sobe e o deploy
+# anterior continua no ar.
+startCommand = "sh -c 'alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

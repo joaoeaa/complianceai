@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     # ─── App ───
     APP_NAME: str = "ComplianceAI"
     APP_ENV: str = "development"
-    DEBUG: bool = True
+    # Ligado, o SQLAlchemy loga cada consulta e o log vai para DEBUG. Desligado
+    # por padrão para que esquecer a variável em produção não seja o caro.
+    DEBUG: bool = False
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
 
