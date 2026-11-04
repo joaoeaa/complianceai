@@ -11,6 +11,7 @@ Convenção de escopo, a mesma das regras:
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -32,6 +33,7 @@ from app.schemas import (
     ExpiredDocumentResponse,
     PurgeRequest,
 )
+from app.services import storage as file_storage
 from app.services.audit import record_access
 from app.services.scope import (
     MANAGER_ROLES,
@@ -460,6 +462,10 @@ async def purge_documents(
             document=doc,
             detail="expurgo por retenção: " + doc.filename,
         )
+        # O expurgo apagava só o registro e deixava o contrato no storage, o
+        # contrário do que a política de guarda promete. Mesma ordem da exclusão
+        # avulsa: arquivo primeiro, para nunca sobrar arquivo sem registro.
+        await asyncio.to_thread(file_storage.get_storage().delete, doc.file_path)
         await db.delete(doc)
         apagados += 1
 

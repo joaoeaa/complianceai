@@ -198,8 +198,15 @@ def _analisar(db: Session, document_id: str) -> bool:
     if extracted_text and extracted_text.strip():
         logger.info("Texto obtido do registro: %d caracteres", len(extracted_text))
     else:
+        from pathlib import Path
+        from app.services.storage import arquivo_temporario, get_storage
+
         logger.info("Extraindo texto de %s...", doc.file_path)
-        extracted_text = extract_text(doc.file_path, doc.mime_type)
+        conteudo = get_storage().read(doc.file_path)
+        if conteudo is None:
+            raise FileNotFoundError(f"Arquivo original não encontrado: {doc.file_path}")
+        with arquivo_temporario(conteudo, suffix=Path(doc.file_path).suffix) as caminho:
+            extracted_text = extract_text(caminho, doc.mime_type)
         doc.extracted_text = extracted_text
         db.commit()
         logger.info("Texto extraído: %d caracteres", len(extracted_text))

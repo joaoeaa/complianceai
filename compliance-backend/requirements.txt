@@ -28,6 +28,9 @@ openai>=1.14.0
 # Vector search (RAG)
 pgvector>=0.3.6
 
+# Storage do arquivo original (S3, Supabase Storage, R2)
+boto3==1.43.100
+
 # PDF report generation
 weasyprint==63.1
 

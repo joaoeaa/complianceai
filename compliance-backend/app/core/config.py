@@ -41,8 +41,17 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_DIMENSIONS: int = 1536
 
     # ─── Storage ───
+    # Onde fica o arquivo original: "local" (UPLOAD_DIR) ou "s3" (bucket
+    # compatível com S3: Supabase Storage, Cloudflare R2, AWS). Ver services/storage.py.
+    STORAGE_BACKEND: str = "local"
     UPLOAD_DIR: str = "./storage/uploads"
     MAX_FILE_SIZE_MB: int = 10
+    S3_BUCKET: str = ""
+    S3_ENDPOINT_URL: str = ""
+    S3_REGION: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_PREFIX: str = "uploads/"
 
     # ─── Análise em background ───
     # Análises simultâneas no processo da api. Cada uma segura uma conexão com o

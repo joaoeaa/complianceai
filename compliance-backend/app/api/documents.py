@@ -2,10 +2,8 @@
 Documents API routes — upload, list, delete, trigger analysis, check status.
 """
 import asyncio
-import os
 import uuid
 from uuid import UUID
-import aiofiles
 import re
 from pathlib import Path
 from typing import Optional
@@ -26,6 +24,7 @@ from app.schemas import (
     AnalysisStatusResponse, AlertResolutionUpdate,
 )
 from app.services.document_extractor import get_mime_type, extract_text
+from app.services import storage as file_storage
 from app.services.analysis_runner import agendar_analise
 from app.services.audit import record_access
 from app.services.scope import (
@@ -41,6 +40,11 @@ settings = get_settings()
 router = APIRouter(prefix="/documents", tags=["Documentos"])
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+
+
+def _extrair_texto(content: bytes, ext: str, mime_type: str) -> str:
+    with file_storage.arquivo_temporario(content, suffix=ext) as caminho:
+        return extract_text(caminho, mime_type)
 
 
 async def _rules_for_document(doc: Document, db: AsyncSession) -> list[dict]:
@@ -158,23 +162,12 @@ async def upload_document(
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Arquivo está vazio")
 
-    # Save file to disk
-    upload_dir = Path(settings.UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    file_id = str(uuid.uuid4())
-    safe_filename = f"{file_id}{ext}"
-    file_path = upload_dir / safe_filename
-
-    async with aiofiles.open(file_path, "wb") as f:
-        await f.write(content)
-
-    # Extract the text here, while the uploaded file is still on this container's
-    # disk. API and worker run as separate services in production and do not share
-    # a filesystem, so the text travels through the database instead of the file.
+    # O texto é extraído aqui, de uma cópia temporária: a extração precisa de um
+    # caminho local, e o storage pode ser um bucket. A análise trabalha sobre o
+    # texto gravado no banco e não volta a ler o arquivo.
     mime_type = get_mime_type(file.filename)
     try:
-        extracted = await asyncio.to_thread(extract_text, str(file_path), mime_type)
+        extracted = await asyncio.to_thread(_extrair_texto, content, ext, mime_type)
     except Exception:
         raise HTTPException(
             status_code=400,
@@ -187,11 +180,17 @@ async def upload_document(
             detail="Não encontramos texto neste documento. Se ele for digitalizado, envie uma versão com texto selecionável.",
         )
 
-    # Create document record
+    # Só grava o arquivo depois de saber que ele é legível: antes, um upload
+    # recusado deixava o arquivo órfão no disco.
+    storage_key = f"{uuid.uuid4()}{ext}"
+    storage = file_storage.get_storage()
+    await asyncio.to_thread(storage.save, storage_key, content, mime_type)
+
+    # Create document record. file_path guarda a chave no storage.
     doc = Document(
         user_id=current_user.id,
         filename=file.filename,
-        file_path=str(file_path),
+        file_path=storage_key,
         file_size=len(content),
         mime_type=mime_type,
         status="uploaded",
@@ -199,16 +198,21 @@ async def upload_document(
         organization_id=organization_id,
         client_id=client_id,
     )
-    db.add(doc)
-    await db.flush()
-    await db.refresh(doc)
+    try:
+        db.add(doc)
+        await db.flush()
+        await db.refresh(doc)
 
-    await record_access(db, user=current_user, action="analyze", document=doc)
+        await record_access(db, user=current_user, action="analyze", document=doc)
 
-    # A análise roda numa thread com sessão própria, que só enxerga o documento
-    # depois do commit. Por isso o commit vem antes do agendamento, e não no fim
-    # do request como nas outras rotas.
-    await db.commit()
+        # A análise roda numa thread com sessão própria, que só enxerga o documento
+        # depois do commit. Por isso o commit vem antes do agendamento, e não no fim
+        # do request como nas outras rotas.
+        await db.commit()
+    except Exception:
+        # Sem registro, ninguém mais chegaria a este arquivo para apagá-lo.
+        await asyncio.to_thread(storage.delete, storage_key)
+        raise
     agendar_analise(doc.id)
 
     return AnalysisStatusResponse(
@@ -490,16 +494,14 @@ async def download_original(
     doc = await get_document_for_read(document_id, current_user, db)
     await record_access(db, user=current_user, action="download", document=doc)
 
-    caminho = Path(doc.file_path)
-    if not caminho.is_file():
+    conteudo = await asyncio.to_thread(file_storage.get_storage().read, doc.file_path)
+    if conteudo is None:
         # Acontece com documentos anteriores ao volume persistente: a analise
         # continua no banco, o arquivo nao. Dizer isso e melhor que um 404 seco.
         raise HTTPException(
             status_code=410,
             detail="O arquivo original não está mais disponível. A análise permanece acessível no relatório.",
         )
-
-    conteudo = await asyncio.to_thread(caminho.read_bytes)
 
     return Response(
         content=conteudo,
@@ -518,9 +520,10 @@ async def delete_document(
     doc = await get_document_for_delete(document_id, current_user, db)
     await record_access(db, user=current_user, action="delete", document=doc)
 
-    # Delete file from disk
-    if os.path.exists(doc.file_path):
-        os.remove(doc.file_path)
+    # O arquivo sai antes do registro. Se o storage falhar, o request falha
+    # inteiro e pode ser repetido; na ordem inversa, uma falha deixaria o
+    # contrato no storage sem nenhum registro que levasse até ele.
+    await asyncio.to_thread(file_storage.get_storage().delete, doc.file_path)
 
     # Delete from database (cascade deletes analysis)
     await db.delete(doc)

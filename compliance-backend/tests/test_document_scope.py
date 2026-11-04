@@ -299,13 +299,13 @@ async def test_arquivo_perdido_responde_410_com_explicacao(
     client: AsyncClient, auth_headers: dict
 ):
     """Documentos anteriores ao volume persistente perderam o arquivo."""
-    import os
     import uuid as _uuid
 
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app import Document
+    from app.services.storage import get_storage
 
     doc_id = await _upload(client, auth_headers)
 
@@ -315,7 +315,7 @@ async def test_arquivo_perdido_responde_410_com_explicacao(
         doc = (await db.execute(
             select(Document).where(Document.id == _uuid.UUID(doc_id))
         )).scalar_one()
-        os.remove(doc.file_path)
+        get_storage().delete(doc.file_path)
     await engine.dispose()
 
     resp = await client.get(f"/api/v1/documents/{doc_id}/download", headers=auth_headers)

@@ -32,8 +32,15 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
     logger.info(f"🚀 Starting {settings.APP_NAME} ({settings.APP_ENV})")
 
+    # Monta o storage já no boot: STORAGE_BACKEND=s3 sem credencial tem que
+    # derrubar o deploy agora, e não o primeiro upload de um usuário.
+    from app.services.storage import get_storage
+    get_storage()
+    logger.info(f"📦 Storage: {settings.STORAGE_BACKEND}")
+
     # Create upload and storage directories
-    Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    if settings.STORAGE_BACKEND.strip().lower() == "local":
+        Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Path("storage").mkdir(parents=True, exist_ok=True)
 
     # In development, auto-create tables for convenience.

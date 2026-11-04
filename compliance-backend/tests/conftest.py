@@ -66,6 +66,21 @@ async def setup_db():
 
 
 @pytest.fixture(autouse=True)
+def storage_de_teste(monkeypatch, tmp_path):
+    """Storage local num diretório temporário, um por teste.
+
+    As rotas e a análise pegam o storage por `app.services.storage.get_storage`,
+    então trocar ali vale para todas. Sem isto os testes gravavam em
+    storage/uploads do projeto e deixavam os arquivos lá.
+    """
+    from app.services.storage import LocalStorage
+
+    storage = LocalStorage(tmp_path / "uploads")
+    monkeypatch.setattr("app.services.storage.get_storage", lambda: storage)
+    return storage
+
+
+@pytest.fixture(autouse=True)
 def analises_agendadas(monkeypatch) -> list:
     """Troca o agendamento da análise por um registro dos ids agendados.
 
