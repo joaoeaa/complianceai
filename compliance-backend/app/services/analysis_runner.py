@@ -81,6 +81,56 @@ BATIMENTO_SEGUNDOS = 60
 SessionFactory = Callable[[], Session]
 
 
+def pior_caso_da_analise(s=None) -> dict[str, float]:
+    """Maior duração possível de uma análise viva, em segundos, da primeira tentativa ao fim.
+
+    É o que ANALYSIS_MAX_DURATION_MINUTES precisa cobrir: abaixo disto, o teto do
+    batimento condenaria uma análise que só está demorando.
+
+    Por tentativa, o que pode esperar a rede:
+      - o embedding da consulta do RAG: (1 + EMBEDDING_MAX_RETRIES) requisições,
+        mais o maior backoff do SDK entre elas;
+      - a chamada ao LLM: LLM_TENTATIVAS requisições, mais as esperas do tenacity.
+    Por requisição conta conexão + leitura. Ficam de fora, por serem desprezíveis
+    ou não poderem ser limitados daqui: o envio do corpo (alguns KB), as consultas
+    ao banco e um corpo de resposta que chegue pingado, já que o timeout de leitura
+    do httpx vale entre pedaços, e não para a resposta inteira.
+    Entre tentativas, a maior espera de cada posição, entre sobrecarga e padrão.
+    """
+    from types import SimpleNamespace
+
+    from app.services import ai_analyzer, embedding_service as emb
+
+    s = s or settings
+    embedding = (1 + emb.EMBEDDING_MAX_RETRIES) * (
+        emb.EMBEDDING_CONNECT_TIMEOUT + emb.EMBEDDING_TIMEOUT
+    ) + emb.EMBEDDING_MAX_RETRIES * emb.EMBEDDING_ESPERA_MAX
+    llm = ai_analyzer.LLM_TENTATIVAS * (ai_analyzer.LLM_CONNECT_TIMEOUT + s.ANTHROPIC_TIMEOUT) + sum(
+        ai_analyzer.LLM_ESPERA(SimpleNamespace(attempt_number=n))
+        for n in range(1, ai_analyzer.LLM_TENTATIVAS)
+    )
+    por_tentativa = embedding + llm
+    esperas = sum(
+        max(
+            ESPERA_SOBRECARGA[min(i, len(ESPERA_SOBRECARGA) - 1)],
+            ESPERA_PADRAO[min(i, len(ESPERA_PADRAO) - 1)],
+        )
+        for i in range(MAX_TENTATIVAS - 1)
+    )
+    return {
+        "embedding": embedding,
+        "llm": llm,
+        "por_tentativa": por_tentativa,
+        "esperas_entre_tentativas": esperas,
+        "total": MAX_TENTATIVAS * por_tentativa + esperas,
+    }
+
+
+def teto_cobre_pior_caso(s=None) -> bool:
+    s = s or settings
+    return pior_caso_da_analise(s)["total"] < s.ANALYSIS_MAX_DURATION_MINUTES * 60
+
+
 class AnaliseAbandonada(Exception):
     """O documento saiu de uploaded/processing por fora, em geral marcado como órfão."""
 

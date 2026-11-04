@@ -499,3 +499,126 @@ class TestConcisao:
         from app.services.ai_analyzer import PROMPT_VERSION
 
         assert int(PROMPT_VERSION) >= 3
+
+
+# ─── Retry da requisição: uma camada só ───────────────────────────────────────
+
+class TestRetryDaRequisicao:
+    """O tenacity é a única camada de retry da chamada à Anthropic.
+
+    Com o retry do SDK ligado (2, por padrão), cada tentativa do tenacity virava
+    até três requisições, e o pior caso da análise ficava sem conta possível.
+    Aqui o cliente é substituído, mas as exceções do `anthropic` são as reais:
+    são elas que o tenacity filtra.
+    """
+
+    @staticmethod
+    def _settings():
+        s = MagicMock()
+        s.ANTHROPIC_API_KEY = "sk-ant-valida"
+        s.ANTHROPIC_MODEL = "claude-sonnet-5"
+        s.ANTHROPIC_MAX_TOKENS = 16384
+        s.ANTHROPIC_TIMEOUT = 300
+        return s
+
+    @staticmethod
+    def _erro_de_conexao():
+        import anthropic
+        import httpx
+
+        return anthropic.APIConnectionError(
+            request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+        )
+
+    def test_cliente_sai_sem_retry_proprio_e_com_timeout_de_conexao(self):
+        from app.services import ai_analyzer
+
+        cliente = MagicMock()
+        cliente.messages.create.return_value = _mock_anthropic_response(_valid_llm_json())
+
+        with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente) as construtor, \
+             patch("app.services.ai_analyzer.settings", self._settings()):
+            ai_analyzer.analyze_document("texto do contrato", _sample_rules())
+
+        kwargs = construtor.call_args.kwargs
+        assert kwargs["max_retries"] == 0
+        assert kwargs["timeout"].read == 300
+        assert kwargs["timeout"].connect == ai_analyzer.LLM_CONNECT_TIMEOUT
+
+    def test_falha_de_conexao_tenta_exatamente_llm_tentativas(self):
+        from tenacity import RetryError
+
+        from app.services import ai_analyzer
+
+        cliente = MagicMock()
+        cliente.messages.create.side_effect = self._erro_de_conexao()
+        esperas = []
+
+        with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
+             patch("app.services.ai_analyzer.settings", self._settings()), \
+             patch.object(ai_analyzer.analyze_document.retry, "sleep", esperas.append):
+            with pytest.raises(RetryError):
+                ai_analyzer.analyze_document("texto do contrato", _sample_rules())
+
+        assert ai_analyzer.LLM_TENTATIVAS == 3
+        assert cliente.messages.create.call_count == 3
+        assert esperas == [4, 4]
+
+    def test_recupera_na_ultima_tentativa(self):
+        from app.services import ai_analyzer
+
+        cliente = MagicMock()
+        cliente.messages.create.side_effect = [
+            self._erro_de_conexao(),
+            self._erro_de_conexao(),
+            _mock_anthropic_response(_valid_llm_json()),
+        ]
+
+        with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
+             patch("app.services.ai_analyzer.settings", self._settings()), \
+             patch.object(ai_analyzer.analyze_document.retry, "sleep", lambda _s: None):
+            resultado = ai_analyzer.analyze_document("texto do contrato", _sample_rules())
+
+        assert cliente.messages.create.call_count == 3
+        assert resultado.risk_score is not None
+
+    def test_erro_que_nao_passa_com_insistencia_tenta_uma_vez(self):
+        import anthropic
+        import httpx
+
+        from app.services import ai_analyzer
+
+        resposta = httpx.Response(
+            401, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+        )
+        cliente = MagicMock()
+        cliente.messages.create.side_effect = anthropic.AuthenticationError(
+            "chave inválida", response=resposta, body=None
+        )
+
+        with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
+             patch("app.services.ai_analyzer.settings", self._settings()), \
+             patch.object(ai_analyzer.analyze_document.retry, "sleep", lambda _s: pytest.fail("não deveria esperar")):
+            with pytest.raises(anthropic.AuthenticationError):
+                ai_analyzer.analyze_document("texto do contrato", _sample_rules())
+
+        assert cliente.messages.create.call_count == 1
+
+
+class TestLimitesDoEmbedding:
+    def test_consulta_do_rag_tem_timeout_curto_e_um_retry(self):
+        from app.services import embedding_service as emb
+
+        base = MagicMock()
+        limitado = base.with_options.return_value
+        limitado.embeddings.create.return_value.data = [MagicMock(embedding=[0.1, 0.2])]
+
+        with patch.object(emb, "_get_client", return_value=base):
+            assert emb.generate_embedding("consulta") == [0.1, 0.2]
+
+        kwargs = base.with_options.call_args.kwargs
+        assert kwargs["max_retries"] == emb.EMBEDDING_MAX_RETRIES == 1
+        assert kwargs["timeout"].read == emb.EMBEDDING_TIMEOUT
+        assert kwargs["timeout"].connect == emb.EMBEDDING_CONNECT_TIMEOUT
+        # A requisição sai pelo cliente limitado, e não pelo singleton com os padrões.
+        base.embeddings.create.assert_not_called()

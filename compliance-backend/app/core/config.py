@@ -65,8 +65,10 @@ class Settings(BaseSettings):
     ORPHAN_TIMEOUT_MINUTES: int = 12
     # Teto do batimento, contado do início da primeira tentativa. Passado isto, a
     # análise deixa de ser renovada e vira órfã no prazo acima: uma thread travada
-    # não segura o documento em processing para sempre.
-    ANALYSIS_MAX_DURATION_MINUTES: int = 30
+    # não segura o documento em processing para sempre. Precisa ficar acima do pior
+    # caso de uma análise viva, ~55 min com os padrões; o boot avisa se não ficar
+    # (analysis_runner.pior_caso_da_analise).
+    ANALYSIS_MAX_DURATION_MINUTES: int = 60
 
     # ─── CORS ───
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"]

@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 import anthropic
+import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.core.config import get_settings
@@ -291,11 +292,24 @@ def _parse_llm_response(raw_text: str) -> Dict[str, Any]:
 
 # ─── Main Analysis Function ───
 
+# O tenacity é a única camada de retry da requisição: o cliente sai com
+# max_retries=0. Com o retry do SDK ligado (2, por padrão) cada tentativa daqui
+# virava até três requisições, e o pior caso de uma análise ficava sem conta
+# possível. Estes valores entram no cálculo de analysis_runner.pior_caso_da_analise.
+LLM_TENTATIVAS = 3
+LLM_ESPERA = wait_exponential(multiplier=2, min=4, max=30)
+# Sem connect explícito, o httpx usa ANTHROPIC_TIMEOUT também para conectar, e uma
+# rede ruim podia gastar 300s só nisso a cada tentativa.
+LLM_CONNECT_TIMEOUT = 10.0
+
+
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=4, max=30),
+    stop=stop_after_attempt(LLM_TENTATIVAS),
+    wait=LLM_ESPERA,
     retry=retry_if_exception_type((anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError)),
-    before_sleep=lambda retry_state: logger.warning(f"Retry {retry_state.attempt_number}/3 da chamada à IA..."),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Retry {retry_state.attempt_number}/{LLM_TENTATIVAS} da chamada à IA..."
+    ),
 )
 def analyze_document(
     document_text: str,
@@ -327,7 +341,8 @@ def analyze_document(
 
     client = anthropic.Anthropic(
         api_key=settings.ANTHROPIC_API_KEY,
-        timeout=settings.ANTHROPIC_TIMEOUT,
+        timeout=httpx.Timeout(settings.ANTHROPIC_TIMEOUT, connect=LLM_CONNECT_TIMEOUT),
+        max_retries=0,
     )
 
     user_prompt = _build_user_prompt(

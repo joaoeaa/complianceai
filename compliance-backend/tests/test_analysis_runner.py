@@ -559,15 +559,17 @@ async def test_batimento_para_no_teto_de_um_runner_que_nunca_termina(
     monkeypatch.setattr(analysis_runner, "executar_analise", nunca_termina)
     doc_id = _criar_documento("processing", analysis_updated_at=VELHO)
 
+    teto = analysis_runner.settings.ANALYSIS_MAX_DURATION_MINUTES * 60
+
     analysis_runner.agendar_analise(doc_id)
     try:
         assert comecou.wait(5)
 
-        # 29 minutos depois do início da primeira tentativa: ainda dentro do teto.
-        relogio.t += 29 * 60
+        # Um minuto antes do teto, contado do início da primeira tentativa.
+        relogio.t += teto - 60
         await _esperar(lambda: _sinal(doc_id) > RECENTE, "não renovou dentro do teto")
 
-        # 31 minutos: passou do teto padrão de 30.
+        # Um minuto depois do teto.
         relogio.t += 2 * 60
         await asyncio.sleep(0.3)  # deixa assentar um batimento que já estivesse em voo
         _envelhecer_sinal(doc_id)
@@ -598,7 +600,7 @@ async def test_teto_conta_do_inicio_da_tentativa_e_nao_da_espera_na_fila(batimen
 
     analysis_runner._registrar(doc_id)  # agendado, sem thread do pool ainda
     try:
-        relogio.t += 60 * 60
+        relogio.t += 2 * analysis_runner.settings.ANALYSIS_MAX_DURATION_MINUTES * 60
         await _esperar(lambda: _sinal(doc_id) > RECENTE, "documento na fila deixou de ser renovado")
     finally:
         analysis_runner._desregistrar(doc_id)
@@ -617,3 +619,57 @@ def test_teto_vem_da_configuracao(monkeypatch, batimento_rapido):
     finally:
         analysis_runner._desregistrar("dentro")
         analysis_runner._desregistrar("fora")
+
+
+# ─── Pior caso de uma análise viva ───
+
+def test_pior_caso_cabe_no_teto_padrao():
+    """O teto do batimento não pode condenar uma análise que só está demorando.
+
+    Com os padrões, por tentativa: embedding 2 x (10 + 30) + 8 = 88s; LLM
+    3 x (10 + 300) + 4 + 4 = 938s. Três tentativas e as esperas de 60 e 180s entre
+    elas: 3 x 1026 + 240 = 3318s, ~55 min. O número fica escrito aqui de
+    propósito: quem mexer num timeout ou numa contagem de tentativas vê a conta
+    mudar e tem de decidir se o teto ainda serve.
+    """
+    from app.core.config import Settings
+
+    padrao = Settings(_env_file=None)
+    pior = analysis_runner.pior_caso_da_analise(padrao)
+
+    assert pior == {
+        "embedding": 88.0,
+        "llm": 938.0,
+        "por_tentativa": 1026.0,
+        "esperas_entre_tentativas": 240,
+        "total": 3318.0,
+    }
+    assert padrao.ANALYSIS_MAX_DURATION_MINUTES == 60
+    assert analysis_runner.teto_cobre_pior_caso(padrao)
+
+
+def test_teto_que_nao_cobre_o_pior_caso_e_detectado():
+    """É o que o boot usa para avisar de uma combinação ruim de variáveis."""
+    from app.core.config import Settings
+
+    assert not analysis_runner.teto_cobre_pior_caso(
+        Settings(_env_file=None, ANALYSIS_MAX_DURATION_MINUTES=30)
+    )
+    assert not analysis_runner.teto_cobre_pior_caso(
+        Settings(_env_file=None, ANTHROPIC_TIMEOUT=900)
+    )
+
+
+def test_boot_avisa_quando_o_teto_nao_cobre(monkeypatch):
+    from app import main
+
+    avisos = []
+    monkeypatch.setattr(main.logger, "warning", lambda msg, *a, **k: avisos.append(msg))
+    monkeypatch.setattr(main.settings, "ANALYSIS_MAX_DURATION_MINUTES", 30)
+    monkeypatch.setattr(analysis_runner.settings, "ANALYSIS_MAX_DURATION_MINUTES", 30)
+    # Fixo, e não o do .env: com um timeout menor o pior caso cabe em 30 minutos.
+    monkeypatch.setattr(analysis_runner.settings, "ANTHROPIC_TIMEOUT", 300)
+
+    main._check_analysis_cap()
+
+    assert len(avisos) == 1 and "55.3 min" in avisos[0]

@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI):
         await _seed_legal_database()
 
     await _recover_orphan_analyses()
+    _check_analysis_cap()
 
     yield
 
@@ -84,6 +85,23 @@ async def _recover_orphan_analyses():
             logger.warning(f"⚠️ {marcados} análise(s) interrompida(s) marcada(s) como erro")
     except Exception as e:
         logger.warning(f"⚠️ Recuperação de análises interrompidas falhou: {e}")
+
+
+def _check_analysis_cap():
+    """Avisa se o teto do batimento ficou abaixo do pior caso de uma análise viva.
+
+    Os dois dependem de variáveis de ambiente (ANTHROPIC_TIMEOUT, o próprio teto),
+    e um ajuste em uma sem a outra faria análises lentas, mas vivas, virarem erro.
+    """
+    from app.services.analysis_runner import pior_caso_da_analise, teto_cobre_pior_caso
+
+    if not teto_cobre_pior_caso():
+        pior = pior_caso_da_analise()["total"] / 60
+        logger.warning(
+            f"⚠️ ANALYSIS_MAX_DURATION_MINUTES={settings.ANALYSIS_MAX_DURATION_MINUTES} "
+            f"está abaixo do pior caso de uma análise ({pior:.1f} min): uma análise "
+            f"lenta, mas viva, pode ser dada como órfã"
+        )
 
 
 async def _seed_defaults():

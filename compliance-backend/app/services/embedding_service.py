@@ -7,6 +7,7 @@ Works in both sync (background analysis thread) and async (FastAPI) contexts.
 import logging
 from typing import List
 
+import httpx
 from openai import OpenAI
 
 from app.core.config import get_settings
@@ -14,6 +15,17 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 _client: OpenAI | None = None
+
+# Limites da busca de um embedding só, a consulta do RAG que roda dentro de cada
+# tentativa da análise. Os padrões do SDK (600s de leitura, 2 retries) bastavam
+# para a análise passar de meia hora só esperando o embedding, e o RAG tem
+# degradação: sem contexto legal, a análise segue. Os lotes da ingestão ficam com
+# os padrões, porque rodam fora da análise.
+EMBEDDING_TIMEOUT = 30.0
+EMBEDDING_CONNECT_TIMEOUT = 10.0
+EMBEDDING_MAX_RETRIES = 1
+# Maior espera do SDK da OpenAI entre retries (openai._constants.MAX_RETRY_DELAY).
+EMBEDDING_ESPERA_MAX = 8.0
 
 
 def _get_client() -> OpenAI:
@@ -42,7 +54,10 @@ def generate_embedding(text: str) -> List[float]:
         text = text[:max_chars]
         logger.warning(f"Texto truncado para {max_chars} caracteres para embedding")
 
-    client = _get_client()
+    client = _get_client().with_options(
+        timeout=httpx.Timeout(EMBEDDING_TIMEOUT, connect=EMBEDDING_CONNECT_TIMEOUT),
+        max_retries=EMBEDDING_MAX_RETRIES,
+    )
     response = client.embeddings.create(
         model=settings.OPENAI_EMBEDDING_MODEL,
         input=text,
