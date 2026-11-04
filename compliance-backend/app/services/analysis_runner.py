@@ -20,7 +20,27 @@ O que o Celery dava e este módulo refaz:
 
 - Retry com backoff: até MAX_TENTATIVAS, com as esperas de analysis_errors
 - Progresso: colunas analysis_stage e analysis_progress em documents
-- Tarefa perdida num restart: `marcar_analises_orfas`, chamada no startup
+- Tarefa perdida num restart: a detecção de órfãs, descrita abaixo
+
+Análise órfã
+------------
+
+Sem fila externa, a análise que morre com o processo não volta, e o documento
+ficaria em `processing` para sempre. `documents.analysis_updated_at` é o sinal
+de vida: muda a cada etapa, a cada tentativa e, enquanto o documento está na
+fila ou rodando neste processo, a cada BATIMENTO_SEGUNDOS. O batimento é o que
+cobre os trechos longos sem etapa nova: a chamada ao LLM, que com os retries do
+tenacity e do próprio SDK pode passar bem de 12 minutos, e a espera entre
+tentativas.
+
+Órfã é a que está em `uploaded`/`processing` sem sinal de vida há mais de
+ORPHAN_TIMEOUT_MINUTES (cai para uploaded_at se a coluna é nula). Ela vira
+`error` em dois lugares: na varredura do startup e, preguiçosamente, quando
+alguém consulta o status daquele documento.
+
+Se a thread ainda estiver viva e o documento tiver sido marcado por fora, ela não
+desfaz a marcação: toda escrita de status é condicional a `uploaded`/`processing`,
+e a thread desiste ao perceber que perdeu o documento (AnaliseAbandonada).
 """
 from __future__ import annotations
 
@@ -29,9 +49,9 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import and_, create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -49,16 +69,29 @@ logger = logging.getLogger(__name__)
 # ESPERA_PADRAO. Uma falha não retentável (resposta longa demais) para na primeira.
 MAX_TENTATIVAS = 3
 
-# Uma análise que passa disto sem terminar foi interrompida: o processo que a
-# rodava caiu ou foi substituído num deploy. A margem cobre a análise mais longa
-# já vista e deixa terminar a que ainda roda na instância antiga durante um deploy.
-ANALISE_ORFA_APOS = timedelta(minutes=10)
+# Status em que uma análise ainda pode estar a caminho. Só a partir deles a thread
+# escreve, e só eles podem ser dados como órfãos.
+EM_ANDAMENTO = ("uploaded", "processing")
+
+# Intervalo do batimento. Bem abaixo de ORPHAN_TIMEOUT_MINUTES, para que um
+# batimento atrasado ou uma falha passageira do banco não bastem para condenar
+# uma análise viva.
+BATIMENTO_SEGUNDOS = 60
 
 SessionFactory = Callable[[], Session]
+
+
+class AnaliseAbandonada(Exception):
+    """O documento saiu de uploaded/processing por fora, em geral marcado como órfão."""
+
 
 _engine = None
 _executor: Optional[ThreadPoolExecutor] = None
 _lock = threading.Lock()
+
+
+def _agora() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _sync_engine():
@@ -91,9 +124,17 @@ def agendar_analise(document_id) -> None:
     """Coloca a análise na fila do pool e volta na hora.
 
     O documento precisa estar commitado antes: a thread abre outra sessão e não
-    enxergaria uma linha ainda dentro da transação do request.
+    enxergaria uma linha ainda dentro da transação do request. Ele entra no
+    batimento já aqui, e não quando a thread começa: com o pool cheio, esperar a
+    vez não pode parecer abandono.
     """
-    _pool().submit(_executar_sem_propagar, str(document_id))
+    doc_id = str(document_id)
+    _registrar(doc_id)
+    try:
+        _pool().submit(_executar_sem_propagar, doc_id)
+    except Exception:
+        _desregistrar(doc_id)
+        raise
 
 
 def _executar_sem_propagar(document_id: str) -> None:
@@ -103,6 +144,68 @@ def _executar_sem_propagar(document_id: str) -> None:
         executar_analise(document_id)
     except Exception:
         logger.exception("Falha inesperada fora da análise do documento %s", document_id)
+    finally:
+        _desregistrar(document_id)
+
+
+# ─── Batimento ───
+# Uma thread só para o processo inteiro, viva apenas enquanto houver documento na
+# fila ou rodando. Sem análise em andamento, não há thread nem consulta periódica,
+# e o serviço pode dormir.
+
+_em_execucao: set[str] = set()
+_batimento: Optional[threading.Thread] = None
+_cond = threading.Condition()
+
+
+def _registrar(document_id: str) -> None:
+    global _batimento
+    with _cond:
+        _em_execucao.add(document_id)
+        if _batimento is None:
+            _batimento = threading.Thread(target=_bater, name="analise-batimento", daemon=True)
+            _batimento.start()
+
+
+def _desregistrar(document_id: str) -> None:
+    with _cond:
+        _em_execucao.discard(document_id)
+        _cond.notify_all()
+
+
+def _bater() -> None:
+    global _batimento
+    while True:
+        with _cond:
+            if not _em_execucao:
+                _batimento = None
+                return
+            ids = list(_em_execucao)
+        tocar_em_andamento(ids, _default_session)
+        with _cond:
+            _cond.wait_for(lambda: not _em_execucao, timeout=BATIMENTO_SEGUNDOS)
+
+
+def tocar_em_andamento(ids: Iterable[str], session_factory: SessionFactory) -> None:
+    """Renova o sinal de vida dos documentos que este processo ainda tem nas mãos."""
+    from app.models import Document
+
+    ids = list(ids)
+    if not ids:
+        return
+    try:
+        with session_factory() as db:
+            db.execute(
+                update(Document)
+                .where(Document.id.in_(ids), Document.status.in_(EM_ANDAMENTO))
+                .values(analysis_updated_at=_agora())
+                .execution_options(synchronize_session=False)
+            )
+            db.commit()
+    except Exception as e:
+        # Um batimento perdido não é grave: o próximo vem em BATIMENTO_SEGUNDOS, e o
+        # prazo de órfã é muitas vezes maior.
+        logger.warning("Batimento das análises em andamento falhou: %s", e)
 
 
 # ─── Execução com retry ───
@@ -113,7 +216,10 @@ def executar_analise(
     session_factory: SessionFactory = _default_session,
     dormir: Callable[[float], None] = time.sleep,
 ) -> str:
-    """Roda a análise com retry e devolve o status final do documento.
+    """Roda a análise com retry e devolve o desfecho.
+
+    "analyzed", "error", "missing" (o documento sumiu) ou "abandoned" (foi marcado
+    como erro por fora enquanto rodava, e o resultado foi descartado).
 
     Cada tentativa abre uma sessão nova: depois de uma falha no meio, a sessão
     anterior pode estar com a transação abortada.
@@ -123,6 +229,12 @@ def executar_analise(
             with session_factory() as db:
                 encontrado = _analisar(db, document_id)
             return "analyzed" if encontrado else "missing"
+        except AnaliseAbandonada:
+            logger.warning(
+                "Documento %s saiu de processing por fora (órfão?); análise descartada",
+                document_id,
+            )
+            return "abandoned"
         except Exception as e:
             categoria, _mensagem, retentavel = classificar_falha(e)
             vai_retentar = retentavel and tentativa < MAX_TENTATIVAS
@@ -136,11 +248,13 @@ def executar_analise(
             # Só marca erro quando não há mais tentativa pela frente. Marcar antes
             # fazia a tela dizer "Erro na análise" para um documento que ainda seria
             # reprocessado, e depois voltar sozinho para analisado.
-            _marcar_status(
+            marcado = _marcar_status(
                 session_factory, document_id, "processing" if vai_retentar else "error"
             )
             if not vai_retentar:
                 return "error"
+            if not marcado:
+                return "abandoned"
 
             espera = ESPERA_SOBRECARGA if categoria == "sobrecarga" else ESPERA_PADRAO
             segundos = espera[min(tentativa - 1, len(espera) - 1)]
@@ -153,23 +267,47 @@ def executar_analise(
     return "error"  # inalcançável: a última tentativa sempre retorna acima
 
 
-def _marcar_status(session_factory: SessionFactory, document_id: str, status: str) -> None:
+def _marcar_status(session_factory: SessionFactory, document_id: str, status: str) -> bool:
+    """Grava o status se o documento ainda está em andamento. Devolve se gravou."""
     from app.models import Document
 
     try:
         with session_factory() as db:
-            db.execute(
-                update(Document).where(Document.id == document_id).values(status=status)
+            resultado = db.execute(
+                update(Document)
+                .where(Document.id == document_id, Document.status.in_(EM_ANDAMENTO))
+                .values(status=status, analysis_updated_at=_agora())
+                .execution_options(synchronize_session=False)
             )
             db.commit()
+            return bool(resultado.rowcount)
     except Exception:
         logger.exception("Não foi possível marcar o documento %s como %s", document_id, status)
+        return False
 
 
-def _etapa(db: Session, doc, stage: str, progress: int) -> None:
-    doc.analysis_stage = stage
-    doc.analysis_progress = progress
+def _avancar(db: Session, document_id: str, **valores) -> None:
+    """Grava etapa, progresso e sinal de vida, só se o documento ainda é nosso.
+
+    É condicional para que uma thread atrasada não ressuscite um documento já
+    marcado como órfão. Se ele saiu de andamento, a análise para aqui, sem
+    gastar a chamada ao LLM.
+    """
+    from app.models import Document
+
+    resultado = db.execute(
+        update(Document)
+        .where(Document.id == document_id, Document.status.in_(EM_ANDAMENTO))
+        .values(analysis_updated_at=_agora(), **valores)
+        .execution_options(synchronize_session=False)
+    )
     db.commit()
+    if not resultado.rowcount:
+        raise AnaliseAbandonada(document_id)
+
+
+def _etapa(db: Session, document_id: str, stage: str, progress: int) -> None:
+    _avancar(db, document_id, analysis_stage=stage, analysis_progress=progress)
 
 
 # ─── Pipeline ───
@@ -188,8 +326,11 @@ def _analisar(db: Session, document_id: str) -> bool:
         logger.error("Documento %s não encontrado", document_id)
         return False
 
-    doc.status = "processing"
-    _etapa(db, doc, "extracting", 15)
+    # Cada tentativa começa aqui, e é aqui que o documento vira processing.
+    _avancar(
+        db, document_id,
+        status="processing", analysis_stage="extracting", analysis_progress=15,
+    )
     logger.info("Status atualizado para 'processing': %s", doc.filename)
 
     # 2. Get the document text. The upload extracts it and stores it on the record.
@@ -213,7 +354,7 @@ def _analisar(db: Session, document_id: str) -> bool:
 
     # 3. Fetch active rules for this document's scope: a document that belongs
     # to an organization follows the team's rules, otherwise the owner's own.
-    _etapa(db, doc, "loading_rules", 30)
+    _etapa(db, document_id, "loading_rules", 30)
     from app.services.rule_scope import (
         active_rules_for_prompt,
         overrides_query,
@@ -234,7 +375,7 @@ def _analisar(db: Session, document_id: str) -> bool:
     logger.info("Regras ativas carregadas (%s): %d", scope_label, len(rules_data))
 
     # 3.5 Build legal context via RAG (graceful degradation)
-    _etapa(db, doc, "legal_context", 40)
+    _etapa(db, document_id, "legal_context", 40)
     legal_context = []
     try:
         from app.services.rag_service import build_legal_context_sync
@@ -247,7 +388,7 @@ def _analisar(db: Session, document_id: str) -> bool:
         logger.warning("RAG context failed (continuing without): %s", rag_err)
 
     # 3.6 Load feedback learnings for AI calibration (learning loop)
-    _etapa(db, doc, "loading_feedback", 50)
+    _etapa(db, document_id, "loading_feedback", 50)
     feedback_learnings = []
     try:
         feedback_learnings = load_feedback_learnings(db, doc)
@@ -258,7 +399,7 @@ def _analisar(db: Session, document_id: str) -> bool:
         logger.warning("Feedback loading failed (continuing without): %s", fb_err)
 
     # 4. Call AI for analysis
-    _etapa(db, doc, "analyzing", 55)
+    _etapa(db, document_id, "analyzing", 55)
     logger.info("Enviando para análise com IA...")
 
     result = analyze_document(
@@ -273,6 +414,7 @@ def _analisar(db: Session, document_id: str) -> bool:
     # Quem revisa precisa saber onde confiar e onde conferir na fonte.
     from app.services.ai_analyzer import PROMPT_VERSION
     from app.services.verification import annotate_alerts, verification_summary
+
     from app.services.rag_service import make_base_lookup
 
     verified_alerts = annotate_alerts(
@@ -294,7 +436,7 @@ def _analisar(db: Session, document_id: str) -> bool:
         )
 
     # 5. Save analysis
-    _etapa(db, doc, "saving", 90)
+    _etapa(db, document_id, "saving", 90)
 
     # Remove existing analysis if re-analyzing
     existing = db.execute(
@@ -317,37 +459,72 @@ def _analisar(db: Session, document_id: str) -> bool:
         duration_ms=result.duration_ms,
     )
     db.add(analysis)
-    doc.status = "analyzed"
-    doc.analysis_stage = None
-    doc.analysis_progress = 100
+
+    # A troca para analyzed é condicional e vai na mesma transação da análise. Se o
+    # documento foi marcado como órfão durante a chamada ao LLM, nada é gravado: o
+    # erro que o usuário já viu continua valendo, em vez de o documento voltar
+    # sozinho para analisado sem que ninguém o tenha reenviado.
+    concluido = db.execute(
+        update(Document)
+        .where(Document.id == document_id, Document.status.in_(EM_ANDAMENTO))
+        .values(
+            status="analyzed",
+            analysis_stage=None,
+            analysis_progress=100,
+            analysis_updated_at=_agora(),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if not concluido.rowcount:
+        db.rollback()
+        raise AnaliseAbandonada(document_id)
     db.commit()
 
     logger.info("Análise salva com sucesso para %s", doc.filename)
     return True
 
 
-# ─── Recuperação no startup ───
+# ─── Detecção de órfãs ───
 
-async def marcar_analises_orfas(db, agora: Optional[datetime] = None) -> int:
-    """Marca como erro as análises que nenhum processo vai terminar.
-
-    Sem fila externa, uma análise que estava rodando quando o processo caiu
-    simplesmente deixa de existir, e o documento ficaria em `processing` para
-    sempre. Entram também os `uploaded` antigos: são os que esperavam vaga no pool
-    e não chegaram a começar.
-
-    `db` é uma AsyncSession. Devolve quantos documentos foram marcados.
-    """
+def criterio_orfao(agora: Optional[datetime] = None):
+    """Condição SQL de análise órfã: em andamento e sem sinal de vida no prazo."""
     from app.models import Document
 
-    limite = (agora or datetime.now(timezone.utc)) - ANALISE_ORFA_APOS
+    limite = (agora or _agora()) - timedelta(minutes=settings.ORPHAN_TIMEOUT_MINUTES)
+    return and_(
+        Document.status.in_(EM_ANDAMENTO),
+        func.coalesce(Document.analysis_updated_at, Document.uploaded_at) < limite,
+    )
+
+
+async def marcar_analises_orfas(db, agora: Optional[datetime] = None) -> int:
+    """Varredura do startup: marca como erro todas as órfãs. `db` é uma AsyncSession."""
+    from app.models import Document
+
     resultado = await db.execute(
         update(Document)
-        .where(
-            Document.status.in_(("uploaded", "processing")),
-            Document.uploaded_at < limite,
-        )
+        .where(criterio_orfao(agora))
         .values(status="error")
+        .execution_options(synchronize_session=False)
     )
     await db.commit()
     return resultado.rowcount or 0
+
+
+async def marcar_se_orfao(db, document_id, agora: Optional[datetime] = None) -> bool:
+    """Versão preguiçosa, para um documento só. Devolve se ele foi marcado agora.
+
+    O UPDATE é condicional, e não um SELECT seguido de UPDATE, para que a
+    decisão e a escrita sejam uma coisa só: se a thread concluir no mesmo
+    instante, só um dos dois lados vence.
+    """
+    from app.models import Document
+
+    resultado = await db.execute(
+        update(Document)
+        .where(Document.id == document_id, criterio_orfao(agora))
+        .values(status="error")
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return bool(resultado.rowcount)

@@ -25,7 +25,7 @@ from app.schemas import (
 )
 from app.services.document_extractor import get_mime_type, extract_text
 from app.services import storage as file_storage
-from app.services.analysis_runner import agendar_analise
+from app.services.analysis_runner import EM_ANDAMENTO, agendar_analise, marcar_se_orfao
 from app.services.audit import record_access
 from app.services.scope import (
     can_read_client,
@@ -361,10 +361,15 @@ async def get_analysis_status(
     """Poll the analysis status of a document."""
     doc = await get_document_for_read(document_id, current_user, db)
 
+    # Uma análise cujo processo morreu não termina nunca. Sem isto, o front ficaria
+    # sondando um documento em processing até o próximo restart da api.
+    if doc.status in EM_ANDAMENTO and await marcar_se_orfao(db, doc.id):
+        await db.refresh(doc)
+
     # A etapa e o percentual são gravados pela thread da análise. O formato da
     # mensagem é o que o front interpreta para mostrar a barra de progresso.
     message = ""
-    if doc.status in ("uploaded", "processing") and doc.analysis_stage:
+    if doc.status in EM_ANDAMENTO and doc.analysis_stage:
         message = f"Etapa: {doc.analysis_stage} ({doc.analysis_progress or 0}%)"
 
     # Get risk score if analyzed
