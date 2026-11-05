@@ -15,6 +15,11 @@ Uso, de dentro de compliance-backend/:
     python -m app.scripts.eval_prompt --versoes 4,5 --rodadas 3     # v4 e v5, com e sem regras
     python -m app.scripts.eval_prompt --versoes 5 --casos com --contratos 02,05
     python -m app.scripts.eval_prompt --comparar resultados/a.json resultados/b.json
+    python -m app.scripts.eval_prompt --retomar resultados/a.json   # refaz o que falhou
+
+--retomar reaproveita uma execução salva: refaz só as análises que falharam por
+outro motivo que não o teto de tokens (crédito, rede), julga as que ficaram sem
+julgamento e regrava o arquivo. O que já foi pago não é pago de novo.
 
 O RAG lê a base legal do banco de DATABASE_URL_SYNC numa transação READ ONLY.
 O resultado completo vai para tests/eval/resultados/<data>_v<versões>.json.
@@ -460,6 +465,20 @@ def rodar_tarefa(t: Tarefa, contexto: list, max_tokens: int) -> Tarefa:
     return t
 
 
+# Erros que valem para todas as chamadas seguintes: insistir só enche o
+# resultado de falhas iguais. A execução para e pode ser retomada depois.
+_ERROS_FATAIS = ("credit balance is too low", "invalid x-api-key", "authentication_error")
+
+
+def erro_fatal(mensagem: Optional[str]) -> bool:
+    return bool(mensagem) and any(f in mensagem for f in _ERROS_FATAIS)
+
+
+def precisa_refazer(e: dict) -> bool:
+    """Análise que falhou por motivo externo. Estourar o teto é resultado, não falha."""
+    return bool(e.get("erro")) and not e.get("estourou_teto")
+
+
 def julgar_tarefa(t: Tarefa, modelo_juiz: str) -> Tarefa:
     try:
         t.resultado["juiz"] = julgar(t.contrato, t.resultado["alerts"], modelo_juiz)
@@ -624,7 +643,11 @@ def main(argv=None) -> int:
     p.add_argument("--sim", action="store_true", help="não pede confirmação do custo")
     p.add_argument("--estimar", action="store_true", help="só mostra a estimativa de custo")
     p.add_argument("--comparar", nargs="+", type=Path, help="imprime a tabela de resultados já salvos")
+    p.add_argument("--retomar", type=Path, help="refaz o que falhou numa execução salva e julga o que faltou")
     args = p.parse_args(argv)
+
+    if args.retomar:
+        return retomar(args.retomar, args)
 
     if args.comparar:
         agregado = {}
@@ -666,57 +689,123 @@ def main(argv=None) -> int:
         print("Cancelado.")
         return 1
 
-    contextos = contextos_legais(contratos, args.casos, not args.sem_rag)
     tarefas = [Tarefa(v, caso, c, r) for r in range(1, args.rodadas + 1)
                for v in args.versoes for caso in args.casos for c in contratos]
+    meta = {
+        "data": datetime.now().isoformat(timespec="seconds"), "commit": _git_commit(),
+        "modelo": modelo, "modelo_juiz": modelo_juiz,
+        "max_tokens": settings.ANTHROPIC_MAX_TOKENS, "versoes": args.versoes,
+        "casos": args.casos, "rodadas": args.rodadas, "rag": not args.sem_rag,
+        "contratos": [c.nome for c in contratos],
+        "gabaritos_revisados": all(c.gabarito["revisado_por_profissional"] for c in contratos),
+    }
+    destino = args.saida or PASTA_RESULTADOS / (
+        f"{datetime.now():%Y%m%d-%H%M}_v{'-'.join(args.versoes)}.json"
+    )
+    return _executar_e_salvar(tarefas, [], meta, destino, args, settings.ANTHROPIC_MAX_TOKENS)
+
+
+def _executar_e_salvar(analisar: list[Tarefa], so_julgar: list[Tarefa], meta: dict,
+                       destino: Path, args, max_tokens: int) -> int:
+    """Analisa, anota e julga; agrega e grava. Usado pela execução nova e pela retomada."""
+    modelo, modelo_juiz = meta["modelo"], meta["modelo_juiz"]
     inicio = time.monotonic()
-    feitas = []
+    contratos = list({t.contrato.nome: t.contrato for t in analisar}.values())
+    casos = sorted({t.caso for t in analisar})
+    contextos = contextos_legais(contratos, casos, meta["rag"]) if analisar else {}
+    feitas, parou = [], None
     with ThreadPoolExecutor(max(1, args.paralelo)) as ex:
-        futuros = [ex.submit(rodar_tarefa, t, contextos[(t.contrato.nome, t.caso)],
-                             settings.ANTHROPIC_MAX_TOKENS) for t in tarefas]
-        for n, f in enumerate(as_completed(futuros), 1):
+        futuros = [ex.submit(rodar_tarefa, t, contextos[(t.contrato.nome, t.caso)], max_tokens)
+                   for t in analisar]
+        n = 0
+        for f in as_completed(futuros):
+            if f.cancelled():
+                continue
+            n += 1
             t = f.result()
             feitas.append(t)
             r = t.resultado
             estado = (f"ERRO {r['erro'][:80]}" if "erro" in r
                       else f"{len(r['alerts'])} alertas, {r['tokens_saida']} tokens, {r['duracao_s']:.0f}s")
-            print(f"[{n}/{len(tarefas)}] v{t.versao}/{t.caso} r{t.rodada} {t.contrato.nome}: {estado}", flush=True)
+            print(f"[{n}/{len(analisar)}] v{t.versao}/{t.caso} r{t.rodada} {t.contrato.nome}: {estado}", flush=True)
+            if parou is None and erro_fatal(r.get("erro")):
+                parou = r["erro"]
+                print("Erro que vale para as próximas chamadas; parando. Retome com --retomar.", flush=True)
+                for outro in futuros:
+                    outro.cancel()
+    # As canceladas não rodaram: ficam registradas como falha a refazer.
+    vistas = {id(t) for t in feitas}
+    for t in analisar:
+        if id(t) not in vistas:
+            t.resultado = {"erro": f"não executada: {parou}", "estourou_teto": False}
+            feitas.append(t)
 
-    anotar(feitas, contextos, not args.sem_rag)
-    with ThreadPoolExecutor(max(1, args.paralelo)) as ex:
-        list(ex.map(lambda t: julgar_tarefa(t, modelo_juiz) if "alerts" in t.resultado else t, feitas))
+    anotar([t for t in feitas if "alerts" in t.resultado], contextos, meta["rag"])
+    a_julgar = [t for t in feitas + so_julgar if "alerts" in t.resultado and "metricas" not in t.resultado]
+    if parou is None:
+        with ThreadPoolExecutor(max(1, args.paralelo)) as ex:
+            list(ex.map(lambda t: julgar_tarefa(t, modelo_juiz), a_julgar))
+        juizes_fatais = {t.resultado.get("erro_juiz") for t in a_julgar if erro_fatal(t.resultado.get("erro_juiz"))}
+        if juizes_fatais:
+            print("O juiz falhou por um erro que vale para as próximas chamadas. Retome com --retomar.")
 
+    todas = feitas + [t for t in so_julgar if t not in feitas]
     execucoes = [
         {"versao": t.versao, "caso": t.caso, "contrato": t.contrato.nome, "rodada": t.rodada, **t.resultado}
-        for t in sorted(feitas, key=lambda t: (t.versao, t.caso, t.contrato.nome, t.rodada))
+        for t in sorted(todas, key=lambda t: (t.versao, t.caso, t.contrato.nome, t.rodada))
     ]
     agregado = agregar(execucoes)
     custo = custo_real(execucoes, modelo, modelo_juiz)
-    resultado = {
-        "meta": {
-            "data": datetime.now().isoformat(timespec="seconds"), "commit": _git_commit(),
-            "modelo": modelo, "modelo_juiz": modelo_juiz,
-            "max_tokens": settings.ANTHROPIC_MAX_TOKENS, "versoes": args.versoes,
-            "casos": args.casos, "rodadas": args.rodadas, "rag": not args.sem_rag,
-            "contratos": [c.nome for c in contratos],
-            "gabaritos_revisados": all(c.gabarito["revisado_por_profissional"] for c in contratos),
-            "duracao_total_s": round(time.monotonic() - inicio),
+    meta = {**meta, "duracao_total_s": round(meta.get("duracao_total_s", 0) + time.monotonic() - inicio),
             "custo_usd": custo,
-        },
-        "agregado": agregado,
-        "execucoes": execucoes,
-    }
-    destino = args.saida or PASTA_RESULTADOS / (
-        f"{datetime.now():%Y%m%d-%H%M}_v{'-'.join(args.versoes)}.json"
-    )
+            "pendentes": sum(1 for e in execucoes if precisa_refazer(e)
+                             or ("alerts" in e and "metricas" not in e))}
     destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_text(json.dumps(resultado, ensure_ascii=False, indent=1), encoding="utf-8")
+    destino.write_text(json.dumps({"meta": meta, "agregado": agregado, "execucoes": execucoes},
+                                  ensure_ascii=False, indent=1), encoding="utf-8")
 
     imprimir_tabela(agregado)
     imprimir_fora_do_gabarito(execucoes)
-    print(f"\nCusto real: " + (f"US$ {custo:.2f}" if custo is not None else "sem preço na tabela"))
+    print(f"\nCusto real acumulado: " + (f"US$ {custo:.2f}" if custo is not None else "sem preço na tabela"))
+    if meta["pendentes"]:
+        print(f"Pendentes: {meta['pendentes']} execuções sem resultado completo. Retome com --retomar {destino}")
     print(f"Resultado completo: {destino}")
-    return 0
+    return 0 if not meta["pendentes"] else 2
+
+
+def retomar(arquivo: Path, args) -> int:
+    from app.core.config import get_settings
+
+    dados = json.loads(arquivo.read_text(encoding="utf-8"))
+    meta = dados["meta"]
+    por_nome = {c.nome: c for c in carregar_contratos(filtro=None)}
+    tarefas = [Tarefa(e["versao"], e["caso"], por_nome[e["contrato"]], e["rodada"],
+                      {k: v for k, v in e.items() if k not in ("versao", "caso", "contrato", "rodada")})
+               for e in dados["execucoes"]]
+    analisar = [t for t in tarefas if precisa_refazer(t.resultado)]
+    for t in tarefas:
+        t.resultado.pop("erro_juiz", None)
+    so_julgar = [t for t in tarefas if t not in analisar]
+    n_julgar = sum(1 for t in so_julgar if "alerts" in t.resultado and "metricas" not in t.resultado)
+
+    settings = get_settings()
+    settings.ANTHROPIC_MAX_TOKENS = meta["max_tokens"]
+    if meta["modelo"] != settings.ANTHROPIC_MODEL:
+        print(f"aviso: o arquivo foi gerado com {meta['modelo']}, e ANTHROPIC_MODEL agora é "
+              f"{settings.ANTHROPIC_MODEL}; as análises refeitas usam o atual.")
+    est_analise = estimar(list({t.contrato.nome: t.contrato for t in analisar}.values()) or [],
+                          ["5"], ["com"], 1, meta["modelo"], meta["modelo_juiz"]) if analisar else None
+    por_analise = (est_analise["custo_usd"] / est_analise["analises"]) if est_analise and est_analise["custo_usd"] else None
+    print(f"Retomando {arquivo.name}: {len(analisar)} análises a refazer e "
+          f"{len(analisar) + n_julgar} julgamentos")
+    if por_analise is not None:
+        print(f"Custo estimado: ~US$ {por_analise * len(analisar) + 0.04 * n_julgar:.2f}")
+    if args.estimar:
+        return 0
+    if not args.sim and input("Continuar? [s/N] ").strip().lower() not in ("s", "sim"):
+        print("Cancelado.")
+        return 1
+    return _executar_e_salvar(analisar, so_julgar, meta, args.saida or arquivo, args, meta["max_tokens"])
 
 
 if __name__ == "__main__":

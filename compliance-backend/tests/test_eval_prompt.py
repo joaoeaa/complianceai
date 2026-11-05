@@ -154,6 +154,90 @@ def test_estimar_nao_chama_a_api(capsys):
     assert "Custo estimado" in saida and "não revisados" in saida
 
 
+CREDITO = "BadRequestError: Error code: 400 - Your credit balance is too low to access the Anthropic API"
+
+
+def test_falha_externa_se_refaz_e_estouro_do_teto_nao():
+    assert ev.precisa_refazer({"erro": CREDITO, "estourou_teto": False})
+    assert not ev.precisa_refazer({"erro": "ValueError: excedeu", "estourou_teto": True})
+    assert not ev.precisa_refazer({"alerts": []})
+    assert ev.erro_fatal(CREDITO) and not ev.erro_fatal("APIConnectionError: timeout")
+
+
+def _sem_api(monkeypatch, analisar):
+    chamadas = {"analise": [], "juiz": []}
+
+    def rodar(t, _ctx, _max):
+        chamadas["analise"].append((t.versao, t.contrato.nome, t.rodada))
+        t.resultado = analisar(t)
+        return t
+
+    def julgar(contrato, alertas, _modelo):
+        chamadas["juiz"].append(contrato.nome)
+        return {"alertas": [{"indice": 0, "esperados": [contrato.esperados[0]["id"]], "nao_devem": [],
+                             "justificativa": "j"}], "tokens_entrada": 10, "tokens_saida": 10}
+
+    monkeypatch.setattr(ev, "rodar_tarefa", rodar)
+    monkeypatch.setattr(ev, "julgar", julgar)
+    monkeypatch.setattr(ev, "contextos_legais", lambda cs, casos, _rag: {(c.nome, k): [] for c in cs for k in casos})
+    monkeypatch.setattr(ev, "anotar", lambda *a: None)
+    return chamadas
+
+
+def _ok(_t):
+    return {"alerts": [{"rule_name": "r", "severity": "high", "legal_basis": None}],
+            "tokens_entrada": 100, "tokens_saida": 100, "duracao_s": 1.0,
+            "perto_do_teto": False, "estourou_teto": False}
+
+
+def test_erro_de_credito_para_a_execucao_e_retomar_completa(monkeypatch, tmp_path, capsys):
+    """Sem crédito, as chamadas seguintes falham iguais: para, grava e retoma depois."""
+    sem_credito = _sem_api(monkeypatch, lambda t: {"erro": CREDITO, "estourou_teto": False})
+    destino = tmp_path / "r.json"
+    codigo = ev.main(["--versoes", "5", "--casos", "sem", "--rodadas", "2", "--contratos", "05",
+                      "--paralelo", "1", "--sim", "--sem-rag", "--saida", str(destino)])
+    assert codigo == 2
+    assert len(sem_credito["analise"]) == 1          # a segunda foi cancelada
+    assert sem_credito["juiz"] == []
+    import json
+    salvo = json.loads(destino.read_text(encoding="utf-8"))
+    assert salvo["meta"]["pendentes"] == 2
+
+    com_credito = _sem_api(monkeypatch, _ok)
+    assert ev.main(["--retomar", str(destino), "--sim", "--paralelo", "1"]) == 0
+    assert sorted(r for *_, r in com_credito["analise"]) == [1, 2]
+    salvo = json.loads(destino.read_text(encoding="utf-8"))
+    assert salvo["meta"]["pendentes"] == 0
+    assert all(e["metricas"]["cobertura"] == 1.0 for e in salvo["execucoes"])
+
+
+def test_retomar_nao_refaz_o_que_ja_foi_analisado_nem_o_que_estourou(monkeypatch, tmp_path):
+    import json
+    destino = tmp_path / "r.json"
+    base = {"versao": "4", "caso": "sem", "contrato": "05_manutencao_equilibrado"}
+    destino.write_text(json.dumps({
+        "meta": {"modelo": "claude-sonnet-5", "modelo_juiz": "claude-sonnet-5", "max_tokens": 16384,
+                 "rag": False},
+        "agregado": {},
+        "execucoes": [
+            {**base, "rodada": 1, **_ok(None), "erro_juiz": CREDITO},   # só falta julgar
+            {**base, "rodada": 2, "erro": "ValueError: excedeu o limite de resposta",
+             "estourou_teto": True},                                    # resultado, não falha
+            {**base, "rodada": 3, "erro": CREDITO, "estourou_teto": False},
+        ],
+    }), encoding="utf-8")
+    chamadas = _sem_api(monkeypatch, _ok)
+
+    assert ev.main(["--retomar", str(destino), "--sim"]) == 0
+
+    assert [r for *_, r in chamadas["analise"]] == [3]
+    assert len(chamadas["juiz"]) == 2
+    salvo = json.loads(destino.read_text(encoding="utf-8"))
+    assert [("metricas" in e, e.get("estourou_teto")) for e in salvo["execucoes"]] == [
+        (True, False), (False, True), (True, False)]
+    assert salvo["agregado"]["v4/sem"]["geral"]["estourou_teto"]["media"] == 1
+
+
 def test_versao_desconhecida_falha_antes_de_gastar():
     with pytest.raises(ValueError, match="desconhecida"):
         ev.main(["--versoes", "7", "--estimar"])

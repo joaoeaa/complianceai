@@ -191,7 +191,10 @@ topo; são legíveis para que alguém da área jurídica os revise.
 python -m app.scripts.eval_prompt --estimar                                  # só o custo
 python -m app.scripts.eval_prompt --versoes 4,5 --rodadas 3 --max-tokens 16384
 python -m app.scripts.eval_prompt --comparar tests/eval/resultados/<arquivo>.json
+python -m app.scripts.eval_prompt --retomar tests/eval/resultados/<arquivo>.json  # refaz o que falhou
 ```
+
+Erro que vale para todas as chamadas seguintes (crédito esgotado, chave inválida) para a execução, que fica gravada. `--retomar` refaz só as análises que falharam por motivo externo, julga as que ficaram sem julgamento e regrava o arquivo; estourar o teto de tokens conta como resultado e não é refeito.
 
 O script roda a análise de verdade, sem gravar no banco (o RAG lê a base numa
 transação `READ ONLY`), com e sem as regras ativas do seed. Um segundo modelo, o
