@@ -1144,6 +1144,9 @@ const ReportPage = ({ docId, onBack, showToast }) => {
   const trechosOk = comTrecho.filter(a => a.excerpt_check === "exact").length;
   const trechosPend = comTrecho.filter(a => a.excerpt_check === "not_found").length;
   const comCitacao = alerts.filter(a => a.legal_basis_check && a.legal_basis_check !== "empty");
+  const temOrigem = alerts.some(a => ORIGIN_META[a.origin]);
+  const deRegra = alerts.filter(a => a.origin === "rule").length;
+  const livres = alerts.filter(a => a.origin === "finding").length;
   const citacoesOk = comCitacao.filter(a => ["grounded", "in_base"].includes(a.legal_basis_check)).length;
 
   return (
@@ -1285,7 +1288,10 @@ const ReportPage = ({ docId, onBack, showToast }) => {
             <div style={{ width: 32, height: 32, borderRadius: 8, background: "#fffbeb", display: "flex", alignItems: "center", justifyContent: "center" }}><AlertTriangle size={16} color="#f59e0b" /></div>
             <div>
               <h3 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", margin: 0, fontFamily: F }}>Alertas de Conformidade</h3>
-              <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: F }}>{alerts.length} {alerts.length === 1 ? "item encontrado" : "itens encontrados"}</span>
+              <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: F }}>
+                {alerts.length} {alerts.length === 1 ? "item encontrado" : "itens encontrados"}
+                {temOrigem && ` · ${deRegra} de regra${deRegra === 1 ? "" : "s"}, ${livres} achado${livres === 1 ? "" : "s"} livre${livres === 1 ? "" : "s"}`}
+              </span>
             </div>
           </div>
           {alerts.length > 0 && (
@@ -1322,6 +1328,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
                     <span style={{ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 10, fontWeight: 700, color: "#8a93a8", border: "1px solid #e6e9f2", borderRadius: 6, padding: "1px 6px" }}>{String(i + 1).padStart(2, "0")}</span>
                     <span style={{ fontSize: 10, fontWeight: 700, color: sev.color, background: sev.bg, padding: "2px 10px", borderRadius: 20, border: `1px solid ${sev.border}`, fontFamily: F }}>{sev.label}</span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", fontFamily: F }}>{alert.rule_name}</span>
+                    <CheckBadge meta={ORIGIN_META[alert.origin]} />
                     {alert.excerpt_check === "not_found" && !isExpanded && (
                       <span style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontFamily: F }}>trecho a conferir</span>
                     )}
@@ -1889,6 +1896,15 @@ const RESOLUTION_META = {
   to_fix:         { label: "Corrigir",       short: "Corrigir",      color: "#b45309", bg: "#fffbeb", border: "#fde68a" },
   not_applicable: { label: "Não se aplica",  short: "Não se aplica", color: "#64748b", bg: "#f1f5f9", border: "#e2e8f0" },
   resolved:       { label: "Resolvido",      short: "Resolvido",     color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0" },
+};
+
+// De onde veio o alerta. Neutro nos dois: gravidade e a severidade, nao a origem.
+// Analises anteriores ao prompt v4 nao trazem o campo e ficam sem selo.
+const ORIGIN_META = {
+  rule:    { label: "Regra do checklist", color: "#4338ca", bg: "#eef2ff", border: "#c7d2fe",
+             hint: "Alerta de uma regra ativa que o documento não cumpre." },
+  finding: { label: "Achado livre",       color: "#475569", bg: "#f1f5f9", border: "#e2e8f0",
+             hint: "Problema encontrado pela análise fora das regras configuradas." },
 };
 
 const CheckBadge = ({ meta }) => meta ? (

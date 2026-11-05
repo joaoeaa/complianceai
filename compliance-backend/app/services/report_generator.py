@@ -51,6 +51,13 @@ LEGAL_CHECK = {
     "empty": ("Sem citação legal", "neutro"),
 }
 
+# De onde veio o alerta. O tom é neutro nos dois: a origem não diz se o
+# problema é mais ou menos grave, isso é a severidade.
+ORIGIN = {
+    "rule": "Regra do checklist",
+    "finding": "Achado livre",
+}
+
 RESOLUTION = {
     "to_fix": ("A corrigir", "#9A5216", "#FBEDE0"),
     "not_applicable": ("Não se aplica", "#4C5464", "#EDF0F4"),
@@ -199,6 +206,7 @@ def _alerta(indice: int, alert: Dict[str, Any]) -> str:
       <div class="alerta-topo">
         <span class="num">{indice}</span>
         <span class="selo" style="color:{cor_sev};background:{fundo_sev}">Severidade {escape(rotulo_sev.lower())}</span>
+        {_selo(ORIGIN[alert["origin"]], "neutro") if alert.get("origin") in ORIGIN else ""}
         <h3>{_txt(alert.get("rule_name"), "Regra")}</h3>
       </div>
       <p class="problema">{_txt(alert.get("issue"))}</p>
@@ -285,6 +293,17 @@ def generate_html_report(
         chave = a.get("severity", "medium")
         if chave in por_severidade:
             por_severidade[chave] += 1
+
+    # Só aparece quando a análise traz a origem (prompt v4 em diante): numa
+    # análise antiga, "0 achados livres" afirmaria algo que não foi registrado.
+    origem_html = ""
+    if any(a.get("origin") in ORIGIN for a in alerts):
+        de_regra = sum(1 for a in alerts if a.get("origin") == "rule")
+        livres = sum(1 for a in alerts if a.get("origin") == "finding")
+        origem_html = (
+            f'<div class="contagem-linha"><b>De regras do checklist</b><span>{de_regra}</span></div>'
+            f'<div class="contagem-linha"><b>Achados livres</b><span>{livres}</span></div>'
+        )
 
     alertas_html = "".join(_alerta(i + 1, a) for i, a in enumerate(alerts)) or (
         '<p class="vazio">Nenhum apontamento nas regras verificadas.</p>'
@@ -438,6 +457,7 @@ def generate_html_report(
     <div class="contagem-linha"><b>Severidade alta</b><span>{por_severidade["high"]}</span></div>
     <div class="contagem-linha"><b>Severidade média</b><span>{por_severidade["medium"]}</span></div>
     <div class="contagem-linha"><b>Severidade baixa</b><span>{por_severidade["low"]}</span></div>
+    {origem_html}
     <div class="contagem-linha"><b>Regras verificadas</b><span>{len(rules)}</span></div>
   </div>
 </div>
