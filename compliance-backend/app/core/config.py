@@ -81,8 +81,8 @@ class Settings(BaseSettings):
     def _versao_de_prompt_conhecida(cls, v: str) -> str:
         # Duplicado de ai_analyzer.PROMPT_VERSIONS para não importar o serviço na
         # configuração; um teste confere que as duas listas são iguais.
-        if v not in ("4", "5"):
-            raise ValueError(f"ANALYSIS_PROMPT_VERSION={v!r} não existe; use 4 ou 5")
+        if v not in ("4", "4.1", "5"):
+            raise ValueError(f"ANALYSIS_PROMPT_VERSION={v!r} não existe; use 4, 4.1 ou 5")
         return v
 
     # ─── CORS ───

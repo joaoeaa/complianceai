@@ -66,10 +66,17 @@ class AnalysisResult:
 #      das cláusulas sem alerta. Pede para não apontar cláusula usual e
 #      equilibrada e para aprofundar os alertas graves. Origem, teto de achados,
 #      proibição de citação inventada e formato de saída são os do v4
+#   4.1  v4 com dois itens do v5 (não apontar cláusula usual e equilibrada;
+#      verificar as ausências esperadas para o tipo de contrato), sem o percurso
+#      por dimensões nem a revisão final. Acrescenta a régua para limitação de
+#      responsabilidade (recíproca e proporcional é no máximo alerta leve;
+#      exclusão total ou por dolo e culpa grave é grave) e para renúncias usuais
+#      do tipo de contrato. O eval mostrou o v5 com menos falsos positivos e
+#      perdendo graves; o v4.1 tenta o primeiro sem o segundo
 #
 # A versão usada vem de ANALYSIS_PROMPT_VERSION. Cada uma continua disponível
 # para que a troca seja medida (app/scripts/eval_prompt.py) antes de virar padrão.
-PROMPT_VERSIONS = ("4", "5")
+PROMPT_VERSIONS = ("4", "4.1", "5")
 PROMPT_VERSION_PADRAO = "4"
 
 # Teto de achados livres por análise. Sem ele, um contrato ruim podia gerar
@@ -109,7 +116,7 @@ SYSTEM_PROMPT_V5 = SYSTEM_PROMPT.replace(
     "também os problemas que nenhuma regra cobre\n",
 )
 
-_SYSTEM_PROMPTS = {"4": SYSTEM_PROMPT, "5": SYSTEM_PROMPT_V5}
+_SYSTEM_PROMPTS = {"4": SYSTEM_PROMPT, "4.1": SYSTEM_PROMPT, "5": SYSTEM_PROMPT_V5}
 
 
 def versao_do_prompt(pedida: Optional[str] = None) -> str:
@@ -153,7 +160,7 @@ def _build_legal_context_section(
         ref = f" — {article}" if article else ""
         lines.append(f"\n[{i}] {source}{ref}:")
         lines.append(content)
-    if versao == "4":
+    if versao in ("4", "4.1"):
         lines.append(
             "\nUse a base legal acima para fundamentar os alertas, os de regra e os "
             "achados livres. Para cada alerta, procure aqui o dispositivo que trata do "
@@ -274,6 +281,23 @@ QUAIS ALERTAS GERAR:
 ''',
 }
 
+# v4.1: o texto do v4, sem mudança, mais os itens 4 a 7.
+_QUAIS_ALERTAS["4.1"] = _QUAIS_ALERTAS["4"] + '''4. Ausências: considere o que um contrato deste tipo normalmente precisa ter e
+   este não tem. Ausência que traz risco concreto é alerta, com "-" em "excerpt".
+5. Cláusula usual e equilibrada para o tipo de contrato não é problema, mesmo que
+   pudesse ser redigida de outro jeito. Um alerta falso custa a confiança do
+   revisor nos verdadeiros.
+6. Responsabilidade: limitá-la de forma recíproca e proporcional, com ressalva
+   de dolo e culpa grave, é aceitável; no máximo um alerta de severidade baixa,
+   se o teto for desproporcional ao risco do contrato. Excluí-la por completo,
+   só em favor de uma das partes, ou alcançando dolo ou culpa grave, é problema
+   grave (severidade alta).
+7. Renúncias: renúncia que a lei admite e que é usual para o tipo de contrato
+   (por exemplo, à indenização por benfeitorias na locação) não é problema.
+   Renúncia antecipada a direito que a lei declara irrenunciável, ou renúncia
+   genérica a qualquer indenização, é problema grave.
+'''
+
 _TAMANHO_ISSUE = {
     "4": '''- "issue": 1 a 2 frases dizendo qual é o problema. Sem repetir o trecho citado,
   que já aparece em "excerpt", e sem reproduzir o texto da lei, que o sistema
@@ -285,6 +309,7 @@ _TAMANHO_ISSUE = {
   sistema anexa depois a partir da base legal.
 ''',
 }
+_TAMANHO_ISSUE["4.1"] = _TAMANHO_ISSUE["4"]
 
 
 def _build_user_prompt(

@@ -41,7 +41,7 @@ def _prompt(versao, regras=REGRAS, contexto=CONTEXTO):
 
 def test_padrao_continua_v4_e_v5_esta_disponivel():
     assert PROMPT_VERSION_PADRAO == "4"
-    assert PROMPT_VERSIONS == ("4", "5")
+    assert PROMPT_VERSIONS == ("4", "4.1", "5")
     assert Settings().ANALYSIS_PROMPT_VERSION == "4"
 
 
@@ -145,3 +145,44 @@ def test_v5_mantem_origem_teto_citacao_e_formato_do_v4():
     def exemplo(p):
         return json.loads(re.search(r"\{\s*\"summary\".*?\n\}", p, re.S).group(0))
     assert exemplo(v4) == exemplo(v5)
+
+
+# ─── v4.1: o v4 com dois itens do v5 e a régua de responsabilidade e renúncia ──
+
+def _secao(p):
+    return p.split("QUAIS ALERTAS GERAR")[1].split("EXIGÊNCIAS")[0]
+
+
+def test_v41_e_o_v4_mais_os_itens_novos():
+    v4, v41 = _secao(_prompt("4")), _secao(_prompt("4.1"))
+    assert v41.startswith(v4.rstrip("\n"))
+    novos = v41[len(v4.rstrip("\n")):]
+    assert [linha[:3] for linha in novos.splitlines() if linha[:1].isdigit()] == ["4. ", "5. ", "6. ", "7. "]
+    # Fora dessa seção, o prompt é o do v4.
+    assert _prompt("4").replace(v4, "") == _prompt("4.1").replace(v41, "")
+    assert ai_analyzer._SYSTEM_PROMPTS["4.1"] == SYSTEM_PROMPT
+    assert _build_legal_context_section(CONTEXTO, "4.1") == _build_legal_context_section(CONTEXTO, "4")
+
+
+def test_v41_traz_do_v5_so_o_usual_e_as_ausencias():
+    v41 = _prompt("4.1")
+    assert "usual e equilibrada" in v41
+    assert "Ausências" in v41 and "normalmente precisa ter" in v41
+    for so_do_v5 in ("MÉTODO DE REVISÃO", "Revisão final", "Equilíbrio entre as partes",
+                     "item de verificação", "Profundidade"):
+        assert so_do_v5 not in v41, so_do_v5
+
+
+def test_v41_separa_limitacao_proporcional_de_exclusao_e_renuncia_usual_de_grave():
+    item6 = _secao(_prompt("4.1")).split("6. Responsabilidade")[1].split("7. ")[0]
+    assert "recíproca e proporcional" in item6 and "severidade baixa" in item6
+    assert "dolo ou culpa grave" in item6 and "severidade alta" in item6
+    item7 = _secao(_prompt("4.1")).split("7. Renúncias")[1]
+    assert "benfeitorias na locação" in item7 and "não é problema" in item7
+    assert "irrenunciável" in item7 and "problema grave" in item7
+
+
+def test_v41_mantem_origem_teto_citacao_e_formato():
+    v4, v41 = _prompt("4"), _prompt("4.1")
+    assert f"Até {MAX_ACHADOS_LIVRES} achados livres" in v41
+    assert v4.split("EXIGÊNCIAS")[1] == v41.split("EXIGÊNCIAS")[1]
