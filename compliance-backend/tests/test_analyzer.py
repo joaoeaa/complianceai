@@ -388,12 +388,12 @@ def test_exemplo_de_json_no_prompt_e_valido():
         "CONTRATO", [{"name": "R", "severity": "high", "criteria": "c"}], [], None
     )
     inicio = prompt.index('{\n  "summary"')
-    exemplo = prompt[inicio:prompt.index("\n\nEXIGÊNCIAS", inicio)]
+    exemplo = prompt[inicio:prompt.index("\n\nQUAIS ALERTAS GERAR", inicio)]
 
     carregado = json.loads(exemplo)
     assert set(carregado) == {"summary", "risk_score", "alerts", "missing_clauses"}
     assert set(carregado["alerts"][0]) == {
-        "rule_name", "severity", "excerpt", "issue", "suggestion", "legal_basis",
+        "origin", "rule_name", "severity", "excerpt", "issue", "suggestion", "legal_basis",
     }
 
 

@@ -51,21 +51,34 @@ class AnalysisResult:
 #   3  limita o tamanho de summary, issue, suggestion e excerpt. O tempo de
 #      espera é proporcional ao que o modelo gera, e a verbosidade não tornava
 #      o apontamento mais correto
-PROMPT_VERSION = "3"
+#   4  alerta também para problema fora do checklist, com o campo "origin"
+#      (rule ou finding), e citação legal pedida em todo alerta que tenha
+#      dispositivo na base. Com regras ativas, o modelo passava a apontar só as
+#      regras reprovadas, e juros abusivos ou retenção indefinida de dados
+#      sumiam do relatório
+PROMPT_VERSION = "4"
+
+# Teto de achados livres por análise. Sem ele, um contrato ruim podia gerar
+# dezenas de apontamentos menores e estourar ANTHROPIC_MAX_TOKENS.
+MAX_ACHADOS_LIVRES = 10
+
+ORIGEM_REGRA = "rule"
+ORIGEM_ACHADO = "finding"
 
 SYSTEM_PROMPT = """Você é um assistente especializado em análise de contratos e documentos legais.
 
 Sua função é:
 1. Analisar o documento completo fornecido
 2. Verificar conformidade com CADA regra listada abaixo
-3. Identificar riscos, cláusulas ausentes e problemas com base na legislação aplicável
-4. Gerar alertas estruturados com trechos exatos do documento
+3. Identificar também os riscos e problemas relevantes que nenhuma regra cobre
+4. Gerar alertas estruturados com trechos exatos do documento e a base legal de cada um
 5. Calcular um score de risco geral de 0 a 100
 
 Você conhece profundamente a legislação brasileira (LGPD, CDC, Código Civil, CLT, Marco Civil da Internet, Lei Anticorrupção, Lei de Licitações, etc.) e também legislação internacional relevante (GDPR, CCPA, SOX, etc.).
 
 Seja preciso e objetivo. Cite trechos EXATOS do documento quando possível.
-Se uma regra não se aplica ao documento (ex: regra sobre dados pessoais em um NDA simples), indique como "não aplicável" ao invés de gerar um falso alerta.
+As regras são um checklist mínimo, não o limite da análise: um problema sério fora delas também vira alerta.
+Se uma regra não se aplica ao documento (ex: regra sobre dados pessoais em um NDA simples), não gere alerta para ela.
 
 IMPORTANTE:
 - Score 0-30 = Baixo risco (documento em boa conformidade)
@@ -101,8 +114,9 @@ def _build_legal_context_section(legal_context: List[Dict[str, str]]) -> str:
         lines.append(f"\n[{i}] {source}{ref}:")
         lines.append(content)
     lines.append(
-        "\nUse a base legal acima para fundamentar seus alertas. "
-        "Inclua o campo 'legal_basis' em cada alerta quando houver artigo de lei relevante.\n"
+        "\nUse a base legal acima para fundamentar os alertas, os de regra e os "
+        "achados livres. Para cada alerta, procure aqui o dispositivo que trata do "
+        "problema e cite-o em 'legal_basis'.\n"
     )
     return "\n".join(lines)
 
@@ -185,7 +199,8 @@ Responda EXCLUSIVAMENTE com o seguinte JSON (sem markdown, sem ```json, apenas o
   "risk_score": 0,
   "alerts": [
     {{
-      "rule_name": "Nome da regra violada",
+      "origin": "rule|finding",
+      "rule_name": "Nome exato da regra reprovada (origin rule) ou título curto do problema (origin finding)",
       "severity": "high|medium|low",
       "excerpt": "Trecho copiado literalmente do documento (ou '-' se a cláusula estiver ausente)",
       "issue": "Descrição clara do problema encontrado",
@@ -196,6 +211,19 @@ Responda EXCLUSIVAMENTE com o seguinte JSON (sem markdown, sem ```json, apenas o
   "missing_clauses": ["Lista de cláusulas/regras ausentes no documento"]
 }}
 
+QUAIS ALERTAS GERAR:
+
+1. Regras reprovadas: um alerta para cada problema que viole uma regra listada,
+   com "origin": "rule" e "rule_name" igual ao nome da regra, sem alterar nada.
+2. Achados livres: os demais problemas relevantes do documento que nenhuma regra
+   cobre, com "origin": "finding" e um título curto em "rule_name". Relevante é o
+   que traz risco jurídico ou financeiro concreto para alguma das partes, como
+   cláusula nula ou abusiva, multa ou juros acima do limite legal, obrigação sem
+   prazo ou desequilíbrio entre as partes. Não aponte estilo ou redação.
+   Até {MAX_ACHADOS_LIVRES} achados livres, os mais graves primeiro. Não repita como
+   achado livre um problema que já tenha alerta de regra.
+3. Sem regras configuradas, todos os alertas são achados livres.
+
 EXIGÊNCIAS SOBRE OS DOIS CAMPOS QUE SÃO CONFERIDOS DEPOIS:
 
 1. "excerpt" precisa ser uma cópia literal do documento, caractere por caractere,
@@ -205,10 +233,13 @@ EXIGÊNCIAS SOBRE OS DOIS CAMPOS QUE SÃO CONFERIDOS DEPOIS:
    Para unir duas passagens distantes, use [...] entre elas.
    Se a cláusula estiver ausente do contrato, use "-".
 
-2. "legal_basis" não pode ser inventado. Use preferencialmente os dispositivos
-   listados em BASE LEGAL RELEVANTE, citando o artigo no formato "Art. N, Lei".
-   Se nenhum dispositivo sustentar o alerta, use null: um alerta sem base legal
-   é melhor do que um alerta com base legal inexistente.
+2. "legal_basis" vale para todo alerta, de regra ou achado livre. Antes de
+   escrever cada alerta, procure em BASE LEGAL RELEVANTE o dispositivo que trata
+   do problema e cite-o no formato "Art. N, Lei". O mesmo artigo pode
+   fundamentar mais de um alerta. Fora da lista, cite só dispositivo que você
+   tenha certeza de que existe e diz o que o alerta afirma.
+   Não invente: se nenhum dispositivo sustentar o alerta, use null. Um alerta
+   sem base legal é melhor do que um alerta com base legal inexistente.
 
 TAMANHO DA RESPOSTA:
 
@@ -224,14 +255,41 @@ do que você gera, e texto longo não torna o apontamento mais correto.
 - "excerpt": só o trecho necessário para identificar a cláusula. Se ela for
   longa, cite o começo, use [...] e cite o fim.
 
-Não repita, entre um alerta e outro, a explicação de um mesmo dispositivo legal.
+Não repita, entre um alerta e outro, a explicação de um mesmo dispositivo legal
+(citar o mesmo artigo em "legal_basis" de vários alertas está certo).
 
 REGRAS CONFIGURADAS PARA REFERÊNCIA DE NOMES: {json.dumps(rule_names, ensure_ascii=False)}
 """
 
 
-def _parse_llm_response(raw_text: str) -> Dict[str, Any]:
-    """Parse and validate the LLM JSON response."""
+def _chave_de_nome(nome: Any) -> str:
+    return " ".join(str(nome or "").split()).casefold()
+
+
+def _origem_e_nome(alert: Dict[str, Any], regras: Dict[str, str]) -> tuple:
+    """Origem do alerta e o nome com que ele é gravado.
+
+    A origem não fica só por conta do modelo: o checklist conta como reprovada a
+    regra que tem alerta com o nome dela, então "rule" precisa valer exatamente
+    para esses. Um nome de regra com caixa ou espaço diferente volta ao nome
+    configurado, senão a regra apareceria como aprovada. Um "rule" sem regra
+    correspondente vira achado livre, e um "finding" com o nome de uma regra
+    vira alerta da regra.
+    """
+    nome = alert.get("rule_name") or "Regra desconhecida"
+    configurado = regras.get(_chave_de_nome(nome))
+    if configurado is not None:
+        return ORIGEM_REGRA, configurado
+    return ORIGEM_ACHADO, nome
+
+
+def _parse_llm_response(raw_text: str, rule_names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Parse and validate the LLM JSON response.
+
+    `rule_names` são as regras enviadas no prompt; com elas cada alerta sai com
+    "origin" rule ou finding.
+    """
+    regras = {_chave_de_nome(n): n for n in (rule_names or [])}
     # Clean up common issues
     text = raw_text.strip()
 
@@ -273,8 +331,10 @@ def _parse_llm_response(raw_text: str) -> Dict[str, Any]:
             # normalizar strings vazias
             if isinstance(legal_basis, str) and legal_basis.strip() == "":
                 legal_basis = None
+            origem, nome = _origem_e_nome(alert, regras)
             valid_alerts.append({
-                "rule_name": alert.get("rule_name", "Regra desconhecida"),
+                "rule_name": nome,
+                "origin": origem,
                 "severity": alert.get("severity", "medium"),
                 "excerpt": alert.get("excerpt", "—"),
                 "issue": alert.get("issue", "Problema não especificado"),
@@ -382,7 +442,7 @@ def analyze_document(
             "ou gerou alertas demais. Aumente ANTHROPIC_MAX_TOKENS ou divida o documento."
         )
 
-    parsed = _parse_llm_response(raw_text)
+    parsed = _parse_llm_response(raw_text, [r["name"] for r in rules])
 
     return AnalysisResult(
         summary=parsed["summary"],

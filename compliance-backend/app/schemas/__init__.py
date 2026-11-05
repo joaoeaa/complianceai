@@ -136,6 +136,9 @@ class LegalSourceSchema(BaseModel):
 
 class AlertSchema(BaseModel):
     rule_name: str
+    # "rule": regra do checklist reprovada; "finding": achado livre, fora das
+    # regras. Análises anteriores ao prompt v4 não têm o campo.
+    origin: Optional[str] = None
     severity: str
     excerpt: str
     issue: str
