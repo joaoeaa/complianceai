@@ -344,10 +344,13 @@ async def get_report(
             alerta.resolution_comment = marcacao.comment
 
     doc.analysis = analysis
+    from app.services.report_generator import resumo_de_regras
+
     return ReportResponse(
         document=_doc_to_response(doc),
         analysis=resposta,
         rules_checked=[RuleResponse.model_validate(r) for r in rules],
+        **resumo_de_regras(rules, analysis.alerts or []),
     )
 
 

@@ -210,6 +210,25 @@ def _alerta(indice: int, alert: Dict[str, Any]) -> str:
     </article>"""
 
 
+def resumo_de_regras(
+    rules: List[Dict[str, Any]], alerts: List[Dict[str, Any]]
+) -> Dict[str, Optional[int]]:
+    """Quantas regras foram avaliadas, quantas passaram e a taxa de conformidade.
+
+    Passar é não ter alerta com o nome da regra. Sem regra avaliada, a taxa é
+    None, e não 100: 0 de 0 não diz que o contrato está conforme, só que nada foi
+    conferido, e um 100% ao lado de um score de risco alto se contradiz.
+
+    O arredondamento é meio para cima, como o Math.round que a tela usava; o
+    round() do Python arredondaria 12,5% para 12.
+    """
+    com_alerta = {a.get("rule_name") for a in alerts}
+    total = len(rules)
+    aprovadas = sum(1 for r in rules if r.get("name") not in com_alerta)
+    taxa = (200 * aprovadas + total) // (2 * total) if total else None
+    return {"rules_total": total, "rules_passed": aprovadas, "compliance_rate": taxa}
+
+
 def _checklist(rules: List[Dict[str, Any]], alerts: List[Dict[str, Any]]) -> str:
     """O que foi verificado, e não só o que deu problema.
 
@@ -233,7 +252,7 @@ def _checklist(rules: List[Dict[str, Any]], alerts: List[Dict[str, Any]]) -> str
             f'background:{fundo}">{marca}</span></td></tr>'
         )
 
-    conformes = len(rules) - len([r for r in rules if r.get("name") in com_alerta])
+    conformes = resumo_de_regras(rules, alerts)["rules_passed"]
     return f"""
     <section class="bloco">
       <h2>Regras verificadas</h2>

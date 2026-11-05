@@ -170,6 +170,11 @@ class ReportResponse(BaseModel):
     document: DocumentResponse
     analysis: AnalysisResponse
     rules_checked: List[RuleResponse]
+    rules_total: int = 0
+    rules_passed: int = 0
+    # Percentual de regras sem alerta. None quando nenhuma regra foi avaliada:
+    # 0 de 0 não é 100% de conformidade.
+    compliance_rate: Optional[int] = None
 
 
 # --- Analysis Task ---

@@ -1134,7 +1134,8 @@ const ReportPage = ({ docId, onBack, showToast }) => {
   const activeRules = (rules_checked || []).filter(r => r.is_active);
   const passedRules = activeRules.filter(r => !alerts.some(a => a.rule_name === r.name));
   const failedRules = activeRules.filter(r => alerts.some(a => a.rule_name === r.name));
-  const complianceRate = activeRules.length > 0 ? Math.round((passedRules.length / activeRules.length) * 100) : 100;
+  // Vem do backend; null quando nenhuma regra foi avaliada. 0/0 nao e 100%.
+  const complianceRate = report.compliance_rate ?? null;
   const riskCol = getRiskColor(analysis.risk_score);
 
   // Verificacao agregada: mesmos denominadores do resumo do backend. So conta
@@ -1205,7 +1206,9 @@ const ReportPage = ({ docId, onBack, showToast }) => {
         </div>
         {[
           { label: "Total de Alertas", value: alerts.length, icon: AlertTriangle, color: "#f59e0b", bg: "#fffbeb" },
-          { label: "Conformidade", value: complianceRate + "%", icon: CheckCircle, color: "#10b981", bg: "#f0fdf4" },
+          complianceRate === null
+            ? { label: "Conformidade", value: "—", hint: "sem regras", icon: CheckCircle, color: "#94a3b8", bg: "#f1f5f9" }
+            : { label: "Conformidade", value: complianceRate + "%", icon: CheckCircle, color: "#10b981", bg: "#f0fdf4" },
           { label: "Regras Analisadas", value: activeRules.length, icon: Scale, color: "#6366f1", bg: "#eef2ff" },
         ].map((stat, i) => (
           <div key={i} style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(11,18,32,0.04), 0 8px 24px rgba(11,18,32,0.05)", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -1215,6 +1218,7 @@ const ReportPage = ({ docId, onBack, showToast }) => {
             <div>
               <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: F }}>{stat.label}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", fontFamily: F, letterSpacing: "-0.02em" }}>{stat.value}</div>
+              {stat.hint && <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: F }}>{stat.hint}</div>}
             </div>
           </div>
         ))}
