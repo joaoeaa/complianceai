@@ -19,10 +19,19 @@ de serviço. Regras de consumo e de serviços digitais vêm desligadas porque em
 geram falso positivo; quem trabalha com B2C liga em um clique.
 
 Uso:
-    python -m app.scripts.seed_rules            # insere o que falta
-    python -m app.scripts.seed_rules --prune    # remove globais fora deste conjunto
+    python -m app.scripts.seed_rules              # insere o que falta
+    python -m app.scripts.seed_rules --dry-run    # mostra o que faria, sem gravar
+    python -m app.scripts.seed_rules --prune      # remove globais fora deste conjunto
+
+A conexão vem de DATABASE_URL_SYNC. Para rodar contra outro banco, como o de
+produção, passe a variável na própria linha de comando: ela tem precedência
+sobre o .env.
+
+Igualdade: uma regra do conjunto já existe quando há uma regra GLOBAL
+(organization_id e user_id nulos) com exatamente o mesmo `name`. Regras de
+usuário ou de equipe com o mesmo nome não contam e nunca são tocadas.
 """
-import sys
+import argparse
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -472,23 +481,48 @@ def seed_rules(db, prune: bool = False) -> tuple[int, int, int]:
     return inseridas, atualizadas, removidas
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     from app.core.config import get_settings
 
-    prune = "--prune" in sys.argv
-    settings = get_settings()
-    engine = create_engine(settings.DATABASE_URL_SYNC)
-    try:
-        with Session(engine) as db:
-            inseridas, atualizadas, removidas = seed_rules(db, prune=prune)
-            db.commit()
+    parser = argparse.ArgumentParser(
+        prog="python -m app.scripts.seed_rules",
+        description="Sincroniza as regras globais padrão no banco de DATABASE_URL_SYNC.",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="calcula o que seria feito e desfaz a transação, sem gravar nada",
+    )
+    parser.add_argument(
+        "--prune", action="store_true",
+        help="remove as regras globais que não estão mais no conjunto canônico",
+    )
+    args = parser.parse_args(argv)
 
+    engine = create_engine(get_settings().DATABASE_URL_SYNC)
+    try:
+        # Host e banco, sem usuário nem senha: rodar contra o banco errado é o
+        # engano mais provável de quem passa a URL de produção na mão.
+        alvo = f"{engine.url.host or 'local'}/{engine.url.database or ''}"
+        print(f"Banco: {alvo}" + ("  [dry-run: nada será gravado]" if args.dry_run else ""))
+
+        with Session(engine) as db:
+            inseridas, atualizadas, removidas = seed_rules(db, prune=args.prune)
+            if args.dry_run:
+                db.rollback()
+            else:
+                db.commit()
+
+        # Os nomes do conjunto são únicos (há teste para isso): o que não foi
+        # inserido já existia como global, e desses o que não mudou foi pulado.
+        puladas = len(DEFAULT_RULES) - inseridas - atualizadas
+        pre = "Seriam " if args.dry_run else ""
         ativas = sum(1 for r in DEFAULT_RULES if r["is_active"])
         print(f"Conjunto canônico: {len(DEFAULT_RULES)} regras ({ativas} ativas por padrão).")
-        print(f"Inseridas: {inseridas}")
-        print(f"Atualizadas: {atualizadas}")
-        if prune:
-            print(f"Removidas (fora do conjunto): {removidas}")
+        print(f"{pre}{'inseridas' if pre else 'Inseridas'}: {inseridas}")
+        print(f"{pre}{'atualizadas' if pre else 'Atualizadas'}: {atualizadas}")
+        print(f"Puladas (já existiam iguais): {puladas}")
+        if args.prune:
+            print(f"{pre}{'removidas' if pre else 'Removidas'} (fora do conjunto): {removidas}")
         elif not (inseridas or atualizadas):
             print("Nada a fazer. Use --prune para aposentar regras antigas.")
     finally:

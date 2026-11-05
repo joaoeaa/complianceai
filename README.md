@@ -476,6 +476,33 @@ do arquivo, não só insere as que faltam. Rodá-lo de novo depois de uma migrat
 que acrescente coluna às regras é o que evita que as antigas fiquem presas no
 valor padrão enquanto as novas nascem certas.
 
+O startup só cria as regras sozinho em `APP_ENV=development`. **Em produção elas
+não existem até alguém rodar o `seed_rules`.** Para rodar contra o banco de
+produção a partir da sua máquina, dentro de `compliance-backend/`, passe a URL
+síncrona na própria linha (ela tem precedência sobre o `.env`). Confira primeiro
+com `--dry-run`, que não grava nada:
+
+```bash
+# bash
+DATABASE_URL_SYNC='postgresql://USUARIO:SENHA@HOST/BANCO?sslmode=require' python -m app.scripts.seed_rules --dry-run
+DATABASE_URL_SYNC='postgresql://USUARIO:SENHA@HOST/BANCO?sslmode=require' python -m app.scripts.seed_rules
+```
+
+```powershell
+# PowerShell
+$env:DATABASE_URL_SYNC = 'postgresql://USUARIO:SENHA@HOST/BANCO?sslmode=require'
+python -m app.scripts.seed_rules --dry-run
+python -m app.scripts.seed_rules
+Remove-Item Env:DATABASE_URL_SYNC
+```
+
+No Neon, a URL é a *connection string* do painel, com `postgresql://` (sem
+`+asyncpg`) e `sslmode=require`. A primeira linha da saída mostra host e banco,
+para conferir o alvo antes de gravar. Em seguida vêm as contagens: inseridas,
+atualizadas e puladas. Uma regra conta como existente quando há regra **global**
+(sem dono nem equipe) com exatamente o mesmo `name`; regras de usuário ou de
+equipe nunca são tocadas.
+
 O `ingest_planalto` busca o texto oficial no Planalto, fatia por artigo e gera os
 embeddings, tudo num passo. Leva alguns minutos e custa poucos centavos de API.
 Use `--listar` para ver o catálogo, `--lei <slug>` para uma só e `--dry-run` para

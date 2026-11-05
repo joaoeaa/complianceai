@@ -174,3 +174,99 @@ def test_seed_rodado_duas_vezes_nao_reporta_mudanca(db):
     inseridas, atualizadas, _ = seed_rules(db)
     db.commit()
     assert (inseridas, atualizadas) == (0, 0)
+
+
+# ─── Linha de comando ───
+
+@pytest.fixture
+def banco_em_arquivo(tmp_path, monkeypatch):
+    """Banco SQLite em arquivo, apontado como DATABASE_URL_SYNC para o main()."""
+    from types import SimpleNamespace
+
+    url = f"sqlite:///{(tmp_path / 'regras.db').as_posix()}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        "app.core.config.get_settings", lambda: SimpleNamespace(DATABASE_URL_SYNC=url)
+    )
+    yield engine
+    engine.dispose()
+
+
+def _globais(engine) -> int:
+    with Session(engine) as s:
+        return len(s.execute(select(Rule)).scalars().all())
+
+
+def test_cli_insere_tudo_e_reporta(banco_em_arquivo, capsys):
+    from app.scripts.seed_rules import main
+
+    main([])
+    saida = capsys.readouterr().out
+    assert _globais(banco_em_arquivo) == len(DEFAULT_RULES)
+    assert f"Inseridas: {len(DEFAULT_RULES)}" in saida
+    assert "Puladas (já existiam iguais): 0" in saida
+
+
+def test_cli_segunda_vez_pula_tudo(banco_em_arquivo, capsys):
+    from app.scripts.seed_rules import main
+
+    main([])
+    capsys.readouterr()
+    main([])
+    saida = capsys.readouterr().out
+    assert _globais(banco_em_arquivo) == len(DEFAULT_RULES)
+    assert "Inseridas: 0" in saida
+    assert f"Puladas (já existiam iguais): {len(DEFAULT_RULES)}" in saida
+
+
+def test_cli_dry_run_nao_grava(banco_em_arquivo, capsys):
+    from app.scripts.seed_rules import main
+
+    main(["--dry-run"])
+    saida = capsys.readouterr().out
+    assert _globais(banco_em_arquivo) == 0
+    assert "dry-run" in saida
+    assert f"Seriam inseridas: {len(DEFAULT_RULES)}" in saida
+
+
+def test_cli_dry_run_nao_desfaz_alinhamento_nem_remove(banco_em_arquivo, capsys):
+    """No dry-run, nem a atualização de uma global antiga nem o prune são gravados."""
+    from app.scripts.seed_rules import main
+
+    main([])
+    spec = DEFAULT_RULES[0]
+    with Session(banco_em_arquivo) as s:
+        regra = s.execute(select(Rule).where(Rule.name == spec["name"])).scalar_one()
+        regra.severity = "low" if spec["severity"] != "low" else "high"
+        s.add(Rule(name="Regra aposentada", description="x", severity="low",
+                   criteria="x", category="geral", is_active=True))
+        s.commit()
+    capsys.readouterr()
+
+    main(["--dry-run", "--prune"])
+    saida = capsys.readouterr().out
+    assert "Seriam atualizadas: 1" in saida
+    assert "Seriam removidas (fora do conjunto): 1" in saida
+    assert f"Puladas (já existiam iguais): {len(DEFAULT_RULES) - 1}" in saida
+    with Session(banco_em_arquivo) as s:
+        assert s.execute(select(Rule).where(Rule.name == "Regra aposentada")).scalar_one()
+        regra = s.execute(select(Rule).where(Rule.name == spec["name"])).scalar_one()
+        assert regra.severity != spec["severity"]
+
+
+def test_cli_nao_imprime_a_senha_da_conexao(tmp_path, monkeypatch, capsys):
+    """A URL de produção tem senha; a linha 'Banco:' mostra só host e banco."""
+    from types import SimpleNamespace
+    from app.scripts import seed_rules as modulo
+
+    url = "postgresql://usuario:segredo123@ep-exemplo.neon.tech/neondb?sslmode=require"
+    monkeypatch.setattr(
+        "app.core.config.get_settings", lambda: SimpleNamespace(DATABASE_URL_SYNC=url)
+    )
+    monkeypatch.setattr(modulo, "Session", lambda engine: (_ for _ in ()).throw(SystemExit(0)))
+    with pytest.raises(SystemExit):
+        modulo.main([])
+    saida = capsys.readouterr().out
+    assert "Banco: ep-exemplo.neon.tech/neondb" in saida
+    assert "segredo123" not in saida

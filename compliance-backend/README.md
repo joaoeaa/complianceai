@@ -105,7 +105,7 @@ Outros scripts:
 |---|---|
 | `ingest_planalto` | Ingestão a partir da fonte oficial, com embeddings. É o caminho atual |
 | `medir_analises` | Compara tempo, tokens e taxas de verificação por prompt ou modelo |
-| `seed_rules` | As 29 regras globais, 14 ativas. Idempotente, e alinha as já gravadas |
+| `seed_rules` | As 29 regras globais, 14 ativas. Idempotente, alinha as já gravadas, `--dry-run` para conferir |
 | `generate_embeddings_for_chunks` | Gera embeddings dos chunks que ainda não têm |
 | `repopulate_chunks` | Reconstrói chunks de documentos legais que ficaram sem eles |
 | `seed_legal_base`, `seed_all`, `seed_cdc`, ... | Seeds antigos: 53 artigos escolhidos a mão. Substituídos pelo `ingest_planalto` |
