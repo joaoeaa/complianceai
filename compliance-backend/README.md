@@ -88,7 +88,11 @@ python -m app.scripts.ingest_planalto --listar     # catálogo
 python -m app.scripts.ingest_planalto --lei lgpd   # uma lei
 python -m app.scripts.ingest_planalto --todas      # o catálogo inteiro
 python -m app.scripts.ingest_planalto --todas --dry-run   # conta artigos sem gravar
+python -m app.scripts.ingest_planalto --lei licitacoes --reprocessar --dry-run  # o que mudaria
+python -m app.scripts.ingest_planalto --lei licitacoes --reprocessar            # refaz os chunks
 ```
+
+`--reprocessar` refaz os chunks de uma lei já ingerida a partir do texto gravado em `legal_documents.full_text`, sem baixar do Planalto. Normaliza o texto, fatia, gera os embeddings e só então troca os chunks antigos pelos novos, numa transação: se o embedding falhar, a lei fica como estava. Com `--dry-run` mostra chunks, artigos e referências quebradas, antes e depois, sem gerar embedding.
 
 Leis cobertas, na íntegra: Código Civil, CLT, CDC, LGPD, Marco Civil da Internet, Lei Anticorrupção, Lei de Licitações, Lei do Inquilinato, Lei das S.A. e Lei de Propriedade Industrial.
 
@@ -96,6 +100,7 @@ Duas decisões desse script que parecem estranhas e não são:
 
 - **A extração é por expressão regular, não por parser de árvore.** O HTML do Planalto vem do FrontPage, com tags mal fechadas que fazem o lxml abandonar o documento no meio: no Código Civil ele parava no artigo 57 de 2.046.
 - **Trechos em `<strike>` e `<del>` são descartados.** É a marcação que o Planalto usa para redação revogada, que apareceria duplicada ao lado da vigente.
+- **A quebra de linha do código-fonte HTML vira espaço.** O editor do Planalto quebra linha no meio da frase, e o texto saía com `"Art. \r\n 92"` e `"III \r\n - locação"`. A referência ia para o `article_ref` com a quebra, e a verificação não casava a citação. A mesma quebra jogava citações como `"art. 20 da Lei 11.033"` para o começo da linha, onde viravam um falso início de artigo. Toda ingestão passa ainda por `normalizar_referencias`, que junta artigo, parágrafo, inciso, alínea e ordinal partidos. Leis ingeridas antes disso precisam de `--reprocessar`.
 
 Sem embeddings, os chunks existem mas a busca semântica não retorna nada, e a análise cai de volta no conhecimento paramétrico do Claude, sem citar artigos.
 
@@ -121,7 +126,7 @@ texto do documento      já extraído no upload, em documents.extracted_text
     ↓
 regras ativas           services/rule_scope           escopo do documento + overrides
     ↓
-search_similar()        services/rag_service          busca vetorial em legal_chunks
+build_legal_context()   services/rag_service          uma consulta por cláusula e por regra
     ↓
 aprendizado             services/feedback_learning    agregado do feedback, mesmo escopo
     ↓
@@ -134,6 +139,14 @@ persiste Analysis       status: analyzed
 
 O texto é extraído **no upload**, e não aqui: o arquivo pode estar num bucket, e a extração precisa de um caminho local. O upload extrai de uma cópia temporária e grava o texto no banco; a análise não volta a ler o arquivo.
 
+### Recuperação da base legal
+
+Uma consulta só, feita com o começo do contrato, recuperava a lei do cabeçalho: num contrato com cláusula inteira de tratamento de dados, o contexto saía com Marco Civil, CLT e CDC e nenhum artigo da LGPD. A recuperação agora é assim:
+
+- **Consultas**: uma por cláusula (`CLÁUSULA` no início da linha, seguida de ordinal) e uma por regra ativa do escopo (nome + critério). O preâmbulo, antes da primeira cláusula, também é consultado. Sem ao menos duas cláusulas, o texto é dividido em parágrafos, juntando os curtos até ~800 caracteres. Até 120 consultas de até 6.000 caracteres cada, para caber numa requisição de embedding.
+- **Embedding**: todas as consultas numa requisição em lote. Se ela falhar, a análise segue sem contexto legal.
+- **Seleção**: 3 trechos por consulta; o mesmo trecho trazido por mais de uma consulta entra uma vez, com a maior similaridade. Por similaridade, até `RAG_MAX_TRECHOS` (padrão 12) no total e 5 por lei, para uma lei longa não ocupar o contexto inteiro.
+
 ### Análise em background
 
 O upload grava o documento, commita e agenda a análise num `ThreadPoolExecutor` da própria API, e responde na hora. O pool é próprio, e não o threadpool do Starlette, porque uma análise leva minutos e não deve ocupar a vaga que o upload e o PDF usam via `asyncio.to_thread`. O tamanho dele, `ANALYSIS_MAX_CONCURRENT` (padrão 2), é o limite de análises simultâneas.
@@ -143,7 +156,7 @@ O upload grava o documento, commita e agenda a análise num `ThreadPoolExecutor`
 - **Análise órfã**: sem fila externa, a análise que morre com o processo não volta. `documents.analysis_updated_at` é o sinal de vida: muda a cada etapa, a cada nova tentativa e, enquanto o documento está na fila ou rodando, a cada 60s, por uma thread de batimento que só existe enquanto há análise em andamento. Órfã é a que está em `uploaded`/`processing` sem sinal de vida há mais de `ORPHAN_TIMEOUT_MINUTES` (padrão 12; sem a coluna, vale `uploaded_at`). Ela vira `error` na varredura do startup e, preguiçosamente, no `GET /documents/{id}/status` daquele documento.
 - **Por que o batimento**: a etapa `analyzing` é uma chamada só, e dentro dela o tenacity retenta sem escrever nada, com até 300s por requisição. Só com etapas e tentativas, uma análise viva pareceria órfã. É também o batimento que protege, durante um deploy, a análise que ainda roda na instância antiga.
 - **Teto do batimento**: passados `ANALYSIS_MAX_DURATION_MINUTES` (padrão 60) do início da primeira tentativa, o documento deixa de ser renovado e vira órfão no prazo normal, cerca de 72 minutos depois do início com os padrões. É o que impede uma thread travada de segurar o documento em `processing` para sempre. A espera na fila não conta. A thread em si não pode ser interrompida em Python: ela segue ocupando a vaga no pool até terminar, e se não terminar nunca, só um restart libera a vaga.
-- **Retries e pior caso**: a requisição à Anthropic tem uma camada só de retry, o tenacity (3 tentativas, esperas de 4s); o cliente sai com `max_retries=0` e 10s de timeout de conexão. A consulta de embedding do RAG tem 30s de timeout e 1 retry. Com os padrões, o pior caso de uma análise viva é 3318s, ~55 min: por tentativa, embedding 2 × (10 + 30) + 8 = 88s e LLM 3 × (10 + 300) + 4 + 4 = 938s; três tentativas e as esperas de 60s e 180s entre elas. A conta está em `analysis_runner.pior_caso_da_analise`, coberta por teste, e o boot avisa se `ANALYSIS_MAX_DURATION_MINUTES` ficar abaixo dela. Ela conta conexão + leitura de cada requisição e deixa de fora o envio do corpo, as consultas ao banco e uma resposta que chegue pingada, que o timeout de leitura do httpx não cobre.
+- **Retries e pior caso**: a requisição à Anthropic tem uma camada só de retry, o tenacity (3 tentativas, esperas de 4s); o cliente sai com `max_retries=0` e 10s de timeout de conexão. As consultas de embedding do RAG vão todas numa requisição em lote, com 30s de timeout e 1 retry. Com os padrões, o pior caso de uma análise viva é 3318s, ~55 min: por tentativa, embedding 2 × (10 + 30) + 8 = 88s e LLM 3 × (10 + 300) + 4 + 4 = 938s; três tentativas e as esperas de 60s e 180s entre elas. A conta está em `analysis_runner.pior_caso_da_analise`, coberta por teste, e o boot avisa se `ANALYSIS_MAX_DURATION_MINUTES` ficar abaixo dela. Ela conta conexão + leitura de cada requisição e deixa de fora o envio do corpo, as consultas ao banco e uma resposta que chegue pingada, que o timeout de leitura do httpx não cobre.
 - **A thread não desfaz um `error`**: toda escrita de status dela é condicional a `uploaded`/`processing`. Se o documento foi marcado por fora, ela para na próxima etapa, sem esperar o backoff, e a troca para `analyzed` vai na mesma transação da análise, que é desfeita junto.
 
 ### Storage

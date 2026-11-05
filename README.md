@@ -288,6 +288,7 @@ um arquivo reinicia o processo e interrompe a análise em andamento.
 | `ANALYSIS_MAX_CONCURRENT` | Análises simultâneas dentro da API | `2` |
 | `ORPHAN_TIMEOUT_MINUTES` | Minutos sem sinal de vida até a análise ser dada como órfã | `12` |
 | `ANALYSIS_MAX_DURATION_MINUTES` | Teto do batimento, contado do início da primeira tentativa; precisa cobrir o pior caso de uma análise (~55 min com os padrões) | `60` |
+| `RAG_MAX_TRECHOS` | Trechos de legislação no prompt de uma análise, no máximo 5 por lei | `12` |
 | `STORAGE_BACKEND` | Onde fica o arquivo original: `local` ou `s3` | `local` |
 | `UPLOAD_DIR` | Diretório do storage `local` | `./storage/uploads` |
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX` | Bucket do storage `s3` | prefixo `uploads/` |
@@ -414,7 +415,7 @@ docker compose exec api pytest
 cd compliance-backend && pytest
 ```
 
-São **400 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
+São **467 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
 
 Cobrem autenticação, documentos, regras e seu escopo, organizações, templates, workflows, webhooks, dashboard, extração de documentos, o analisador de IA, a geração de relatórios e, com atenção especial, os limites que sustentam a confiança na ferramenta: o sigilo por cliente, o isolamento do feedback entre contas e a recusa do expurgo fora do prazo.
 
@@ -507,6 +508,22 @@ O `ingest_planalto` busca o texto oficial no Planalto, fatia por artigo e gera o
 embeddings, tudo num passo. Leva alguns minutos e custa poucos centavos de API.
 Use `--listar` para ver o catálogo, `--lei <slug>` para uma só e `--dry-run` para
 conferir a contagem de artigos sem gravar nada.
+
+Uma lei já ingerida pode ser refeita a partir do texto gravado, sem baixar de
+novo, com `--reprocessar`. É o caminho para corrigir as referências partidas em
+linha das leis ingeridas antes da normalização (a Lei 14.133 tinha 467 chunks com
+`"Art. \r\n92"`). Contra produção, de dentro de `compliance-backend/`:
+
+```powershell
+$env:DATABASE_URL_SYNC = 'postgresql://USUARIO:SENHA@HOST/BANCO?sslmode=require'
+python -m app.scripts.ingest_planalto --lei licitacoes --reprocessar --dry-run
+python -m app.scripts.ingest_planalto --lei licitacoes --reprocessar
+Remove-Item Env:DATABASE_URL_SYNC
+```
+
+O `--dry-run` mostra o banco de destino e, para a lei, chunks, artigos e
+referências quebradas antes e depois, sem gerar embedding. A troca dos chunks é
+feita numa transação, depois de gerados os embeddings novos.
 
 O `seed_legal_base` antigo continua no repositório, mas cobria 53 artigos escolhidos
 a mão e foi substituído por este.
