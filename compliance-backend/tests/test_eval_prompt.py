@@ -241,3 +241,19 @@ def test_retomar_nao_refaz_o_que_ja_foi_analisado_nem_o_que_estourou(monkeypatch
 def test_versao_desconhecida_falha_antes_de_gastar():
     with pytest.raises(ValueError, match="desconhecida"):
         ev.main(["--versoes", "7", "--estimar"])
+
+
+def test_retomar_so_com_julgamentos_tambem_estima_o_custo(tmp_path, capsys):
+    import json
+    destino = tmp_path / "r.json"
+    destino.write_text(json.dumps({
+        "meta": {"modelo": "claude-sonnet-5", "modelo_juiz": "claude-sonnet-5", "max_tokens": 16384,
+                 "rag": False},
+        "agregado": {},
+        "execucoes": [{"versao": "4", "caso": "sem", "contrato": "05_manutencao_equilibrado",
+                       "rodada": 1, **_ok(None), "erro_juiz": CREDITO}],
+    }), encoding="utf-8")
+    assert ev.main(["--retomar", str(destino), "--estimar"]) == 0
+    saida = capsys.readouterr().out
+    assert "0 análises a refazer e 1 julgamentos" in saida
+    assert "Custo estimado: ~US$ 0.04" in saida

@@ -798,8 +798,15 @@ def retomar(arquivo: Path, args) -> int:
     por_analise = (est_analise["custo_usd"] / est_analise["analises"]) if est_analise and est_analise["custo_usd"] else None
     print(f"Retomando {arquivo.name}: {len(analisar)} análises a refazer e "
           f"{len(analisar) + n_julgar} julgamentos")
-    if por_analise is not None:
-        print(f"Custo estimado: ~US$ {por_analise * len(analisar) + 0.04 * n_julgar:.2f}")
+    # Um julgamento sai de ~6 mil tokens de entrada e SAIDA_ESTIMADA_JUIZ de saída.
+    por_juiz = None
+    if meta["modelo_juiz"] in PRECOS:
+        je, js = PRECOS[meta["modelo_juiz"]]
+        por_juiz = (6_000 * je + SAIDA_ESTIMADA_JUIZ * js) / 1e6
+    if por_juiz is not None and (por_analise is not None or not analisar):
+        print(f"Custo estimado: ~US$ {(por_analise or 0) * len(analisar) + por_juiz * n_julgar:.2f}")
+    else:
+        print("Custo estimado: sem preço na tabela para esse modelo")
     if args.estimar:
         return 0
     if not args.sim and input("Continuar? [s/N] ").strip().lower() not in ("s", "sim"):
