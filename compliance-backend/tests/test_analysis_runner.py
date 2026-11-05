@@ -626,12 +626,19 @@ def test_teto_vem_da_configuracao(monkeypatch, batimento_rapido):
 def test_pior_caso_cabe_no_teto_padrao():
     """O teto do batimento não pode condenar uma análise que só está demorando.
 
-    Com os padrões, por tentativa: embedding 2 x (10 + 30) + 8 = 88s; LLM
-    3 x (10 + 300) + 4 + 4 = 938s. Três tentativas e as esperas de 60 e 180s entre
-    elas: 3 x 1026 + 240 = 3318s, ~55 min. O número fica escrito aqui de
+    Com os padrões, por tentativa: embedding 1 lote x [2 x (10 + 30) + 8] = 88s;
+    LLM 3 x (10 + 300) + 4 + 4 = 938s. Três tentativas e as esperas de 60 e 180s
+    entre elas: 3 x 1026 + 240 = 3318s, ~55 min. O número fica escrito aqui de
     propósito: quem mexer num timeout ou numa contagem de tentativas vê a conta
     mudar e tem de decidir se o teto ainda serve.
+
+    O RAG por cláusula e por regra não mudou o número porque todas as consultas
+    vão numa requisição só, com os limites da consulta única. Que é uma só, e com
+    esses limites, é o que test_rag_retrieval confere na recuperação real.
     """
+    from app.services import rag_service
+
+    assert rag_service.CHAMADAS_DE_EMBEDDING_POR_ANALISE == 1
     from app.core.config import Settings
 
     padrao = Settings(_env_file=None)

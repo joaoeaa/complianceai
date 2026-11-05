@@ -65,6 +65,32 @@ def generate_embedding(text: str) -> List[float]:
     )
     return response.data[0].embedding
 
+def generate_query_embeddings(texts: List[str]) -> List[List[float]]:
+    """Embeddings de todas as consultas do RAG de uma análise, numa requisição só.
+
+    Os limites são os da consulta única (EMBEDDING_TIMEOUT, EMBEDDING_MAX_RETRIES),
+    e não os da ingestão: é uma requisição por tentativa da análise, e é assim que
+    pior_caso_da_analise a conta. Quem chama limita quantos textos e de que
+    tamanho, para caber no limite de tokens de uma requisição.
+    """
+    if not texts:
+        return []
+    settings = get_settings()
+    client = _get_client().with_options(
+        timeout=httpx.Timeout(EMBEDDING_TIMEOUT, connect=EMBEDDING_CONNECT_TIMEOUT),
+        max_retries=EMBEDDING_MAX_RETRIES,
+    )
+    response = client.embeddings.create(
+        model=settings.OPENAI_EMBEDDING_MODEL,
+        input=list(texts),
+        dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
+    )
+    vetores = [item.embedding for item in sorted(response.data, key=lambda x: x.index)]
+    if len(vetores) != len(texts):
+        raise ValueError(f"Embedding em lote devolveu {len(vetores)} vetores para {len(texts)} textos")
+    return vetores
+
+
 def generate_embeddings_batch(texts: List[str], batch_size: int = 100) -> List[List[float]]:
     """Generate embeddings for multiple texts in batches via OpenAI API.
 

@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # caso de uma análise viva, ~55 min com os padrões; o boot avisa se não ficar
     # (analysis_runner.pior_caso_da_analise).
     ANALYSIS_MAX_DURATION_MINUTES: int = 60
+    # Trechos de legislação que vão para o prompt de uma análise, no máximo. Cada
+    # um tem até ~800 caracteres; 12 dão uns 10 mil caracteres de contexto.
+    RAG_MAX_TRECHOS: int = 12
 
     # ─── CORS ───
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"]

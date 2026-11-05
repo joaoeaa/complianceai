@@ -10,15 +10,39 @@ Handles:
 import asyncio
 import re
 import logging
+from collections import Counter
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy import select, func, text as sa_text
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.embedding_service import generate_embedding, generate_embeddings_batch
+from app.services.embedding_service import (
+    generate_embedding,
+    generate_embeddings_batch,
+    generate_query_embeddings,
+)
 
 logger = logging.getLogger(__name__)
+
+_NUMERO_DA_LEI = re.compile(r"(\d{1,3}(?:\.\d{3})*)\s*/\s*(\d{4})")
+
+
+def chave_da_lei(fonte: str) -> str:
+    """Identidade da lei, ignorando como a fonte foi escrita.
+
+    "Lei 8.078/1990" e "Lei 8.078/1990 (CDC)" são a mesma lei, mas a limpeza
+    comparava o texto inteiro e por isso não removia a versão antiga: as duas
+    conviviam na base, e os trechos velhos, de artigos escolhidos a mão,
+    competiam na busca com a lei íntegra.
+
+    Sem número reconhecível, cai no texto normalizado, que ao menos casa consigo
+    mesmo em reingestões.
+    """
+    m = _NUMERO_DA_LEI.search(fonte or "")
+    if not m:
+        return (fonte or "").strip().lower()
+    return f"{m.group(1).replace('.', '')}/{m.group(2)}"
 
 # ─── Article Reference Extraction ───
 
@@ -299,6 +323,15 @@ def _build_search_results(rows: Any) -> List[Dict[str, Any]]:
     ]
 
 
+def _buscar_por_embedding(db: Session, embedding: List[float], top_k: int) -> List[Dict[str, Any]]:
+    """Busca por similaridade a partir de um embedding já calculado."""
+    result = db.execute(
+        sa_text(_build_search_sql()),
+        {"embedding": _fmt_embedding(embedding), "top_k": top_k},
+    )
+    return _build_search_results(result.fetchall())
+
+
 def _build_search_sql(category: Optional[str] = None) -> str:
     """Build the full search SQL with optional category filter."""
     sql = """
@@ -416,27 +449,163 @@ def make_base_lookup(db: Session) -> Any:
     return lookup
 
 
+# ─── Consultas da análise ───
+#
+# Uma consulta só, feita com o começo do contrato, recuperava a lei do cabeçalho
+# e não a das cláusulas: num contrato com cláusula inteira de tratamento de dados,
+# a consulta pegava a qualificação das partes e trazia Marco Civil, CLT e CDC,
+# nenhum artigo da LGPD. Cada cláusula agora é uma consulta, e cada regra ativa
+# também, e os resultados são fundidos.
+
+# Trechos aproveitados de cada consulta, antes da fusão.
+RAG_TRECHOS_POR_CONSULTA = 3
+# Nenhuma lei ocupa mais que isto do contexto, por mais que domine a busca.
+RAG_MAX_POR_LEI = 5
+# Alvo do agrupamento de parágrafos, no contrato que não usa "CLÁUSULA".
+RAG_ALVO_PARAGRAFOS = 800
+# Pedaço curto demais para dizer sobre o que é (um título solto, uma assinatura).
+RAG_MIN_CHARS_CONSULTA = 40
+# Limites de uma requisição de embedding: cada texto fica bem abaixo dos 8.192
+# tokens por entrada, e 120 x 6.000 caracteres, ~200 mil tokens, abaixo dos 300
+# mil por requisição.
+RAG_MAX_CHARS_CONSULTA = 6000
+RAG_MAX_CONSULTAS = 120
+# Requisições de embedding por tentativa da análise; pior_caso_da_analise conta com isto.
+CHAMADAS_DE_EMBEDDING_POR_ANALISE = 1
+
+# "CLÁUSULA" no início da linha seguida de ordinal: número ("4ª", "10"), romano
+# ("IV") ou ordinal por extenso ("QUARTA", "Décima"). Sem exigir o começo de linha,
+# "conforme a cláusula 5ª" no meio de uma frase partiria o texto.
+_INICIO_DE_CLAUSULA = re.compile(
+    r"^[ \t]*CL[ÁA]USULA\s+(?:\d+|[IVXLC]+\b|\w+a\b)", re.IGNORECASE | re.MULTILINE
+)
+_MARCA_DE_PAGINA = re.compile(
+    r"^[ \t]*---\s*Página\s+\d+[^\n]*---[ \t]*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def _agrupar_paragrafos(texto: str, alvo: int = RAG_ALVO_PARAGRAFOS) -> List[str]:
+    """Parágrafos, com os curtos juntados aos vizinhos até ~`alvo` caracteres.
+
+    Parágrafo é o que fica entre linhas em branco. Texto sem linha em branco, comum
+    em PDF, cai para uma linha por parágrafo. Um parágrafo maior que o alvo fica
+    sozinho, inteiro.
+    """
+    paragrafos = [p.strip() for p in re.split(r"\n[ \t]*\n", texto) if p.strip()]
+    if len(paragrafos) <= 1:
+        paragrafos = [p.strip() for p in texto.splitlines() if p.strip()]
+
+    grupos: List[str] = []
+    atual = ""
+    for p in paragrafos:
+        if atual and len(atual) + 1 + len(p) > alvo:
+            grupos.append(atual)
+            atual = p
+        else:
+            atual = f"{atual}\n{p}" if atual else p
+    if atual:
+        grupos.append(atual)
+    return grupos
+
+
+def dividir_em_clausulas(texto: str) -> List[str]:
+    """Divide o contrato em cláusulas, ou em grupos de parágrafos se não houver.
+
+    Conta como dividido em cláusulas o texto com pelo menos duas: com uma só, a
+    divisão separaria apenas o preâmbulo do resto. O preâmbulo, antes da primeira
+    cláusula, vira uma consulta como as outras; considerandos costumam morar nele.
+    """
+    texto = _MARCA_DE_PAGINA.sub("", texto or "")
+    inicios = [m.start() for m in _INICIO_DE_CLAUSULA.finditer(texto)]
+    if len(inicios) >= 2:
+        limites = inicios + [len(texto)]
+        partes = [texto[: inicios[0]]] + [texto[a:b] for a, b in zip(limites, limites[1:])]
+    else:
+        partes = _agrupar_paragrafos(texto)
+    return [p.strip() for p in partes if len(p.strip()) >= RAG_MIN_CHARS_CONSULTA]
+
+
+def consultas_da_analise(document_text: str, rules: List[Dict[str, Any]]) -> List[str]:
+    """As consultas de uma análise: uma por regra ativa e uma por cláusula.
+
+    As regras vêm primeiro porque são poucas e cada uma é um tema que a análise
+    vai verificar de qualquer jeito. Se o total passar de RAG_MAX_CONSULTAS, o que
+    sobra são as últimas cláusulas, e isso fica no log.
+    """
+    por_regra = [
+        f"{r.get('name', '').strip()}: {r.get('criteria', '').strip()}".strip(": ")
+        for r in rules
+    ]
+    consultas = [c for c in por_regra if c] + dividir_em_clausulas(document_text)
+    if len(consultas) > RAG_MAX_CONSULTAS:
+        logger.warning(
+            "RAG: %d consultas, acima do limite de %d; as últimas cláusulas ficam de fora",
+            len(consultas), RAG_MAX_CONSULTAS,
+        )
+        consultas = consultas[:RAG_MAX_CONSULTAS]
+    return [c[:RAG_MAX_CHARS_CONSULTA] for c in consultas]
+
+
+def selecionar_trechos(
+    resultados_por_consulta: List[List[Dict[str, Any]]],
+    teto: int,
+    por_lei: int = RAG_MAX_POR_LEI,
+    similarity_threshold: float = 0.0,
+) -> List[Dict[str, Any]]:
+    """Funde os resultados das consultas no contexto da análise.
+
+    O mesmo trecho trazido por várias consultas entra uma vez, com a maior
+    similaridade que teve. Depois, por similaridade decrescente, até `teto`
+    trechos e no máximo `por_lei` de cada lei: uma lei longa e genérica, como o
+    Código Civil, não toma o lugar de todas as outras.
+    """
+    melhores: Dict[str, Dict[str, Any]] = {}
+    for resultados in resultados_por_consulta:
+        for trecho in resultados:
+            if trecho["similarity"] < similarity_threshold:
+                continue
+            atual = melhores.get(trecho["id"])
+            if atual is None or trecho["similarity"] > atual["similarity"]:
+                melhores[trecho["id"]] = trecho
+
+    # O id desempata, para a seleção não depender da ordem das consultas.
+    ordenados = sorted(melhores.values(), key=lambda t: (-t["similarity"], t["id"]))
+    escolhidos: List[Dict[str, Any]] = []
+    por_fonte: Counter = Counter()
+    for trecho in ordenados:
+        lei = chave_da_lei(trecho["document_source"])
+        if por_fonte[lei] >= por_lei:
+            continue
+        escolhidos.append(trecho)
+        por_fonte[lei] += 1
+        if len(escolhidos) >= teto:
+            break
+    return escolhidos
+
+
 def build_legal_context_sync(
     document_text: str,
     rules: List[Dict[str, Any]],
     db: Session,
-    top_k: int = 5,
+    top_k: Optional[int] = None,
     similarity_threshold: float = 0.3,
 ) -> List[Dict[str, str]]:
-    """Build legal context for prompt enrichment. SYNC version, for the background analysis.
+    """Contexto legal da análise. Versão síncrona, para a thread da análise.
 
-    Builds a composite query from a document excerpt + rule criteria,
-    then searches for relevant legislation chunks.
+    Uma consulta por cláusula do contrato e uma por regra ativa, com todos os
+    embeddings numa requisição só. Cada consulta traz os RAG_TRECHOS_POR_CONSULTA
+    trechos mais próximos, e `selecionar_trechos` funde tudo.
 
     Args:
-        document_text: The extracted document text.
-        rules: List of active rule dicts (with 'criteria' key).
-        db: Sync SQLAlchemy session.
-        top_k: Maximum number of chunks to retrieve.
-        similarity_threshold: Minimum similarity to include a result.
+        document_text: Texto extraído do contrato.
+        rules: Regras ativas do escopo da análise (com 'name' e 'criteria').
+        db: Sessão síncrona.
+        top_k: Teto de trechos no contexto; padrão RAG_MAX_TRECHOS.
+        similarity_threshold: Similaridade mínima para um trecho entrar.
 
     Returns:
-        List of context dicts with source, article_ref, and content.
+        Lista de dicts com source, article_ref e content. Vazia se não houver base
+        indexada ou se o embedding falhar: a análise segue sem contexto legal.
     """
     # Check if any legislation is indexed WITH embeddings
     from app.models import LegalChunk
@@ -447,19 +616,36 @@ def build_legal_context_sync(
         logger.info("Nenhuma legislação indexada — pulando contexto legal")
         return []
 
-    doc_excerpt = document_text[:500]
-    rule_keywords = " ".join([r.get("criteria", "")[:100] for r in rules[:5]])
-    composite_query = f"{doc_excerpt} {rule_keywords}"
+    if top_k is None:
+        from app.core.config import get_settings
 
-    chunks = search_relevant_chunks_sync(composite_query, db, top_k=top_k)
+        top_k = get_settings().RAG_MAX_TRECHOS
 
-    relevant = [c for c in chunks if c["similarity"] >= similarity_threshold]
+    consultas = consultas_da_analise(document_text, rules)
+    if not consultas:
+        logger.info("Contrato sem texto para consultar — pulando contexto legal")
+        return []
+
+    try:
+        vetores = generate_query_embeddings(consultas)
+    except Exception as exc:
+        logger.warning("Embedding das consultas do RAG falhou (seguindo sem contexto): %s", exc)
+        return []
+
+    resultados = [_buscar_por_embedding(db, v, RAG_TRECHOS_POR_CONSULTA) for v in vetores]
+    relevant = selecionar_trechos(
+        resultados, teto=top_k, similarity_threshold=similarity_threshold
+    )
 
     if not relevant:
         logger.info("Nenhum contexto legal relevante acima do threshold")
         return []
 
-    logger.info(f"Contexto legal: {len(relevant)} chunks relevantes (threshold={similarity_threshold})")
+    logger.info(
+        "Contexto legal: %d trechos de %d consultas (%s)",
+        len(relevant), len(consultas),
+        dict(Counter(chave_da_lei(c["document_source"]) for c in relevant)),
+    )
 
     return [
         {

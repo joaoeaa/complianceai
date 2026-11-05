@@ -88,23 +88,26 @@ def pior_caso_da_analise(s=None) -> dict[str, float]:
     batimento condenaria uma análise que só está demorando.
 
     Por tentativa, o que pode esperar a rede:
-      - o embedding da consulta do RAG: (1 + EMBEDDING_MAX_RETRIES) requisições,
-        mais o maior backoff do SDK entre elas;
+      - o embedding das consultas do RAG: todas as consultas (cláusulas e regras)
+        vão em CHAMADAS_DE_EMBEDDING_POR_ANALISE requisição em lote, cada uma com
+        (1 + EMBEDDING_MAX_RETRIES) envios e o maior backoff do SDK entre eles;
       - a chamada ao LLM: LLM_TENTATIVAS requisições, mais as esperas do tenacity.
     Por requisição conta conexão + leitura. Ficam de fora, por serem desprezíveis
-    ou não poderem ser limitados daqui: o envio do corpo (alguns KB), as consultas
-    ao banco e um corpo de resposta que chegue pingado, já que o timeout de leitura
-    do httpx vale entre pedaços, e não para a resposta inteira.
+    ou não poderem ser limitados daqui: o envio do corpo (até ~700 KB no lote do
+    RAG), as consultas ao banco, inclusive as até RAG_MAX_CONSULTAS buscas
+    vetoriais, e um corpo de resposta que chegue pingado, já que o timeout de
+    leitura do httpx vale entre pedaços, e não para a resposta inteira.
     Entre tentativas, a maior espera de cada posição, entre sobrecarga e padrão.
     """
     from types import SimpleNamespace
 
-    from app.services import ai_analyzer, embedding_service as emb
+    from app.services import ai_analyzer, embedding_service as emb, rag_service as rag
 
     s = s or settings
-    embedding = (1 + emb.EMBEDDING_MAX_RETRIES) * (
-        emb.EMBEDDING_CONNECT_TIMEOUT + emb.EMBEDDING_TIMEOUT
-    ) + emb.EMBEDDING_MAX_RETRIES * emb.EMBEDDING_ESPERA_MAX
+    embedding = rag.CHAMADAS_DE_EMBEDDING_POR_ANALISE * (
+        (1 + emb.EMBEDDING_MAX_RETRIES) * (emb.EMBEDDING_CONNECT_TIMEOUT + emb.EMBEDDING_TIMEOUT)
+        + emb.EMBEDDING_MAX_RETRIES * emb.EMBEDDING_ESPERA_MAX
+    )
     llm = ai_analyzer.LLM_TENTATIVAS * (ai_analyzer.LLM_CONNECT_TIMEOUT + s.ANTHROPIC_TIMEOUT) + sum(
         ai_analyzer.LLM_ESPERA(SimpleNamespace(attempt_number=n))
         for n in range(1, ai_analyzer.LLM_TENTATIVAS)

@@ -27,6 +27,9 @@ import httpx
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+# Mora no rag_service porque o RAG também a usa, no limite de trechos por lei.
+from app.services.rag_service import chave_da_lei
+
 # O Planalto fecha a conexão sem User-Agent de navegador.
 _HEADERS = {
     "User-Agent": (
@@ -73,26 +76,6 @@ CATALOGO: list[Lei] = [
 ]
 
 POR_SLUG = {lei.slug: lei for lei in CATALOGO}
-
-
-_NUMERO_DA_LEI = re.compile(r"(\d{1,3}(?:\.\d{3})*)\s*/\s*(\d{4})")
-
-
-def chave_da_lei(fonte: str) -> str:
-    """Identidade da lei, ignorando como a fonte foi escrita.
-
-    "Lei 8.078/1990" e "Lei 8.078/1990 (CDC)" são a mesma lei, mas a limpeza
-    comparava o texto inteiro e por isso não removia a versão antiga: as duas
-    conviviam na base, e os trechos velhos, de artigos escolhidos a mão,
-    competiam na busca com a lei íntegra.
-
-    Sem número reconhecível, cai no texto normalizado, que ao menos casa consigo
-    mesmo em reingestões.
-    """
-    m = _NUMERO_DA_LEI.search(fonte or "")
-    if not m:
-        return (fonte or "").strip().lower()
-    return f"{m.group(1).replace('.', '')}/{m.group(2)}"
 
 
 def _decodificar(conteudo: bytes) -> str:
