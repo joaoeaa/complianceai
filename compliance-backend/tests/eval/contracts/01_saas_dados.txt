@@ -1,0 +1,62 @@
+CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE SOFTWARE E
+TRATAMENTO DE DADOS
+Pelo presente instrumento particular, de um lado NUVEMTECH SOLUÇÕES DIGITAIS
+LTDA., pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 00.000.000/0001-00, com
+sede na Rua das Palmeiras, nº 100, Recife/PE, doravante denominada CONTRATADA, e de
+outro lado MERCADO BOM PREÇO COMÉRCIO DE ALIMENTOS LTDA., inscrita no
+CNPJ sob o nº 11.111.111/0001-11, com sede na Avenida Central, nº 250, Petrolina/PE,
+doravante denominada CONTRATANTE, têm entre si justo e contratado o seguinte:
+CLÁUSULA 1ª – DO OBJETO
+1.1. O presente contrato tem por objeto a licença de uso do sistema de gestão de clientes e
+programa de fidelidade "FidelizaMais", na modalidade software como serviço, incluindo
+hospedagem, manutenção e suporte técnico.
+1.2. Para a execução dos serviços, a CONTRATADA terá acesso aos dados pessoais dos
+clientes da CONTRATANTE, incluindo nome, CPF, endereço, telefone, e-mail, histórico de
+compras e data de nascimento.
+CLÁUSULA 2ª – DO PREÇO E DO PAGAMENTO
+2.1. Pela prestação dos serviços, a CONTRATANTE pagará à CONTRATADA o valor mensal
+de R$ 2.500,00 (dois mil e quinhentos reais), com vencimento todo dia 5 de cada mês.
+2.2. Em caso de atraso, incidirá multa de 10% (dez por cento) sobre o valor devido, acrescida de
+juros de 5% (cinco por cento) ao mês.
+2.3. A CONTRATADA poderá reajustar o valor mensal a qualquer tempo, mediante simples
+comunicação por e-mail, independentemente de concordância da CONTRATANTE.
+CLÁUSULA 3ª – DO PRAZO E DA RESCISÃO
+3.1. O presente contrato vigorará pelo prazo de 36 (trinta e seis) meses, renovando-se
+automaticamente por iguais períodos.
+3.2. A rescisão antecipada pela CONTRATANTE, por qualquer motivo, implicará o pagamento
+de multa equivalente à totalidade das mensalidades vincendas até o final do período contratual.
+3.3. A CONTRATADA poderá rescindir o contrato a qualquer momento, sem aviso prévio e
+sem qualquer ônus.
+CLÁUSULA 4ª – DO TRATAMENTO DE DADOS PESSOAIS
+4.1. A CONTRATADA poderá utilizar os dados pessoais dos clientes da CONTRATANTE
+para finalidades próprias, inclusive o desenvolvimento de novos produtos, análises de mercado
+e o envio de ofertas de parceiros comerciais.
+4.2. A CONTRATADA poderá compartilhar os dados com empresas parceiras, no Brasil ou no
+exterior, sem necessidade de comunicação prévia à CONTRATANTE ou aos titulares.
+4.3. Os dados serão armazenados em servidores localizados fora do território nacional, a critério
+exclusivo da CONTRATADA.
+4.4. Encerrado o contrato, a CONTRATADA poderá manter os dados em sua base por prazo
+indeterminado.
+4.5. Em caso de incidente de segurança envolvendo os dados, a CONTRATADA comunicará a
+CONTRATANTE quando julgar conveniente.
+CLÁUSULA 5ª – DA RESPONSABILIDADE
+5.1. A CONTRATADA não se responsabiliza por quaisquer danos, diretos ou indiretos,
+decorrentes de falhas, indisponibilidade do sistema, perda de dados ou vazamento de
+informações, ainda que causados por culpa ou dolo de seus prepostos.
+5.2. A CONTRATANTE renuncia expressamente a qualquer direito de indenização em face da
+CONTRATADA.
+CLÁUSULA 6ª – DA PROPRIEDADE INTELECTUAL
+6.1. Todos os relatórios, cadastros e bases de dados gerados pela CONTRATANTE no sistema
+passam a ser de propriedade exclusiva da CONTRATADA.
+CLÁUSULA 7ª – DAS DISPOSIÇÕES GERAIS
+7.1. A CONTRATANTE não poderá ceder ou transferir este contrato sem a anuência da
+CONTRATADA, que poderá cedê-lo livremente a terceiros.
+7.2. Fica eleito o foro da Comarca de São Paulo/SP para dirimir quaisquer questões oriundas
+deste contrato, com renúncia a qualquer outro, por mais privilegiado que seja.
+E, por estarem assim justas e contratadas, as partes assinam o presente instrumento em duas vias
+de igual teor.
+Recife/PE, 4 de novembro de 2026.
+_________________________________
+NUVEMTECH SOLUÇÕES DIGITAIS LTDA.
+_________________________________
+MERCADO BOM PREÇO COMÉRCIO DE ALIMENTOS LTDA.

@@ -1,0 +1,110 @@
+# =====================================================================
+#  GABARITO NÃO REVISADO POR PROFISSIONAL
+#  Escrito para medir o prompt de análise, sem revisão de advogado.
+#  Antes de tratar o resultado como medida de qualidade jurídica, peça
+#  a alguém da área que confira cada item, a gravidade e a base legal.
+# =====================================================================
+revisado_por_profissional: false
+
+contrato: 01_saas_dados.txt
+tipo: Licença de software como serviço (SaaS) com tratamento de dados pessoais de clientes, entre duas empresas
+observacoes: >
+  É o contrato de teste usado no desenvolvimento, feito para ter muitos problemas.
+  A contratante é um supermercado que usa o sistema como insumo da própria
+  atividade; por isso o gabarito trata a relação como civil entre empresas, e não
+  de consumo. Quem discordar disso deve rever os itens de multa e de
+  responsabilidade.
+
+# O que a análise deveria apontar. "base_legal" lista os dispositivos que
+# sustentam o item; a avaliação aceita qualquer um deles. Lista vazia quando não
+# há artigo específico.
+problemas_esperados:
+  - id: juros-acima-do-limite
+    clausula: "2.2"
+    problema: Juros de mora de 5% ao mês, cerca de 60% ao ano, muito acima do limite para credor que não é instituição financeira.
+    gravidade: alta
+    base_legal: ["Art. 406, Código Civil", "Art. 1º, Decreto 22.626/1933"]
+
+  - id: reajuste-unilateral
+    clausula: "2.3"
+    problema: A contratada pode reajustar o preço a qualquer tempo, por simples e-mail, sem concordância da contratante; o preço fica ao arbítrio de uma só parte.
+    gravidade: alta
+    base_legal: ["Art. 122, Código Civil", "Art. 489, Código Civil"]
+
+  - id: rescisao-assimetrica
+    clausula: "3.2 e 3.3"
+    problema: A contratante paga todas as mensalidades até o fim de um prazo de 36 meses se sair antes, enquanto a contratada pode rescindir a qualquer momento, sem aviso e sem ônus.
+    gravidade: alta
+    base_legal: ["Art. 413, Código Civil", "Art. 473, Código Civil"]
+
+  - id: dados-para-finalidade-propria
+    clausula: "4.1"
+    problema: A contratada, que trata os dados em nome da contratante, poderia usá-los para fins próprios (novos produtos, análise de mercado, ofertas de parceiros), fora da finalidade do contrato e sem base legal.
+    gravidade: alta
+    base_legal: ["Art. 6º, LGPD", "Art. 7º, LGPD", "Art. 39, LGPD"]
+
+  - id: compartilhamento-e-transferencia-internacional
+    clausula: "4.2 e 4.3"
+    problema: Compartilhamento com parceiros no Brasil ou no exterior, e armazenamento fora do país a critério da contratada, sem aviso, sem indicar destino e sem salvaguardas.
+    gravidade: alta
+    base_legal: ["Art. 33, LGPD", "Art. 7º, LGPD"]
+
+  - id: retencao-indefinida
+    clausula: "4.4"
+    problema: Depois do fim do contrato, a contratada pode manter os dados por prazo indeterminado, em vez de eliminá-los ou devolvê-los.
+    gravidade: alta
+    base_legal: ["Art. 15, LGPD", "Art. 16, LGPD"]
+
+  - id: incidente-quando-julgar-conveniente
+    clausula: "4.5"
+    problema: A comunicação de incidente de segurança fica a critério da contratada, sem prazo, o que impede a contratante, controladora, de cumprir o dever de comunicar a ANPD e os titulares.
+    gravidade: média
+    base_legal: ["Art. 48, LGPD", "Art. 46, LGPD"]
+
+  - id: exclusao-de-responsabilidade-ate-por-dolo
+    clausula: "5.1"
+    problema: Exclusão total de responsabilidade, inclusive por vazamento de dados e por dolo dos prepostos; a exclusão por dolo não vale.
+    gravidade: alta
+    base_legal: ["Art. 186, Código Civil", "Art. 927, Código Civil", "Art. 422, Código Civil", "Art. 42, LGPD"]
+
+  - id: renuncia-a-indenizacao
+    clausula: "5.2"
+    problema: Renúncia antecipada e genérica da contratante a qualquer indenização.
+    gravidade: alta
+    base_legal: ["Art. 424, Código Civil", "Art. 422, Código Civil"]
+
+  - id: propriedade-das-bases-da-contratante
+    clausula: "6.1"
+    problema: Relatórios, cadastros e bases de dados gerados pela contratante passam a ser da contratada; a contratante perde a própria base de clientes e a posição de controladora.
+    gravidade: alta
+    base_legal: ["Art. 5º, LGPD", "Art. 39, LGPD", "Art. 6º, LGPD"]
+
+  - id: cessao-assimetrica
+    clausula: "7.1"
+    problema: Só a contratada pode ceder o contrato livremente; a contratante depende da anuência dela.
+    gravidade: baixa
+    base_legal: []
+
+  - id: ausencia-de-sigilo-e-seguranca
+    clausula: "ausente"
+    problema: Não há cláusula de confidencialidade nem obrigação de segurança da informação para quem hospeda os dados de clientes.
+    gravidade: média
+    base_legal: ["Art. 46, LGPD", "Art. 47, LGPD"]
+
+# O que a análise NÃO deveria apontar como problema. Um alerta que corresponda a
+# um destes itens conta como falso positivo.
+nao_devem_aparecer:
+  - id: multa-de-mora-limitada-pelo-cdc
+    clausula: "2.2"
+    o_que_seria_errado: Dizer que a multa de mora de 10% passa do limite de 2% do Código de Defesa do Consumidor.
+    por_que: A relação é entre empresas, e o supermercado não é destinatário final do software; o limite de 2% do CDC não se aplica. Ponto que admite discussão; revisar.
+
+  - id: preco-ou-vencimento
+    clausula: "2.1"
+    o_que_seria_errado: Apontar como problema o valor mensal ou a data de vencimento.
+    por_que: Preço fixo mensal com vencimento definido é cláusula usual.
+
+  - id: objeto
+    clausula: "1.1"
+    o_que_seria_errado: Apontar a descrição do objeto (licença SaaS com hospedagem, manutenção e suporte) como vaga ou insuficiente.
+    por_que: O objeto está identificado de forma usual para esse tipo de contrato.

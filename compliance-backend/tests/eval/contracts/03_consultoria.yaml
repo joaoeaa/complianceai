@@ -1,0 +1,72 @@
+# =====================================================================
+#  GABARITO NÃO REVISADO POR PROFISSIONAL
+#  Escrito para medir o prompt de análise, sem revisão de advogado.
+#  Antes de tratar o resultado como medida de qualidade jurídica, peça
+#  a alguém da área que confira cada item, a gravidade e a base legal.
+# =====================================================================
+revisado_por_profissional: false
+
+contrato: 03_consultoria.txt
+tipo: Prestação de serviços de consultoria entre empresas, por preço fixo e prazo de 6 meses
+observacoes: >
+  Os problemas, aqui, pesam contra a contratada (a consultora). Serve para ver
+  se a análise enxerga desequilíbrio nos dois sentidos, e não só contra quem
+  paga.
+
+problemas_esperados:
+  - id: pagamento-a-criterio-exclusivo
+    clausula: "2.2"
+    problema: O pagamento só é devido após a "plena satisfação" da contratante, a seu exclusivo critério; a contrapartida fica ao arbítrio de quem paga.
+    gravidade: alta
+    base_legal: ["Art. 122, Código Civil"]
+
+  - id: prazo-de-pagamento-longo-e-indefinido
+    clausula: "2.2"
+    problema: Pagamento em até 120 dias depois de um aceite que não tem prazo para acontecer; na prática, o prazo de pagamento fica indefinido.
+    gravidade: média
+    base_legal: []
+
+  - id: cessao-de-metodologia-preexistente
+    clausula: "4.1"
+    problema: Transfere à contratante as metodologias e ferramentas que a consultora já tinha e usa com outros clientes, muito além do que foi desenvolvido no contrato.
+    gravidade: média
+    base_legal: ["Art. 4º, Lei 9.610/1998", "Art. 49, Lei 9.610/1998"]
+
+  - id: nao-concorrencia-desproporcional
+    clausula: "5.1"
+    problema: Não concorrência por 5 anos, em todo o país e em todo o setor metalúrgico, sem contrapartida; restrição desproporcional à atividade da consultora.
+    gravidade: alta
+    base_legal: ["Art. 421, Código Civil", "Art. 422, Código Civil"]
+
+  - id: responsabilidade-assimetrica
+    clausula: "6.1 e 6.2"
+    problema: A consultora responde sem limite, inclusive por lucros cessantes e danos indiretos, enquanto a responsabilidade da contratante fica limitada a uma parcela mensal.
+    gravidade: média
+    base_legal: ["Art. 421, Código Civil", "Art. 422, Código Civil"]
+
+  - id: multa-acima-da-obrigacao-principal
+    clausula: "7.1"
+    problema: Multa de 3 vezes o preço total, por qualquer descumprimento, acima do valor da obrigação principal.
+    gravidade: alta
+    base_legal: ["Art. 412, Código Civil", "Art. 413, Código Civil"]
+
+nao_devem_aparecer:
+  - id: sigilo-de-dois-anos
+    clausula: "3.1"
+    o_que_seria_errado: Apontar o prazo de sigilo de 2 anos após o término como insuficiente ou excessivo.
+    por_que: É prazo usual para consultoria de processos.
+
+  - id: reembolso-de-despesas
+    clausula: "2.3"
+    o_que_seria_errado: Apontar como problema o reembolso de despesas mediante comprovante e aprovação prévia.
+    por_que: É o arranjo usual e equilibrado para despesas de viagem.
+
+  - id: rescisao-com-aviso
+    clausula: "8.1"
+    o_que_seria_errado: Apontar a rescisão por qualquer das partes com 30 dias de aviso, sem multa, como problema.
+    por_que: É bilateral e equilibrada.
+
+  - id: foro-da-sede-da-contratante
+    clausula: "9.1"
+    o_que_seria_errado: Apontar o foro eleito como problema.
+    por_que: É o foro da sede de uma das partes, válido entre empresas.

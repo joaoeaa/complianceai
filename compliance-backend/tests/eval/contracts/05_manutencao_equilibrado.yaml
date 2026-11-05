@@ -1,0 +1,67 @@
+# =====================================================================
+#  GABARITO NÃO REVISADO POR PROFISSIONAL
+#  Escrito para medir o prompt de análise, sem revisão de advogado.
+#  Antes de tratar o resultado como medida de qualidade jurídica, peça
+#  a alguém da área que confira cada item, a gravidade e a base legal.
+# =====================================================================
+revisado_por_profissional: false
+
+contrato: 05_manutencao_equilibrado.txt
+tipo: Prestação de serviços de manutenção de ar-condicionado entre empresas, redigida de forma equilibrada
+observacoes: >
+  Serve para medir falsos positivos. O contrato tem um único problema leve; o
+  resto é o que se espera de um contrato bem feito desse tipo. Quase tudo que
+  a análise apontar aqui além do item esperado merece desconfiança.
+
+problemas_esperados:
+  - id: retencao-integral-sem-prazo
+    clausula: "2.5"
+    problema: Por qualquer divergência, a contratante retém a fatura inteira, e não só a parte discutida, sem prazo para resolver a divergência.
+    gravidade: baixa
+    base_legal: ["Art. 476, Código Civil", "Art. 422, Código Civil"]
+
+nao_devem_aparecer:
+  - id: multa-e-juros-de-mora
+    clausula: "2.4"
+    o_que_seria_errado: Apontar multa de 2%, juros de 1% ao mês e correção pelo IPCA como abusivos.
+    por_que: Estão dentro dos limites usuais e legais.
+
+  - id: reajuste-anual
+    clausula: "2.3"
+    o_que_seria_errado: Apontar o reajuste anual pelo IPCA como problema.
+    por_que: Periodicidade anual e índice oficial são o usual.
+
+  - id: pecas-por-orcamento
+    clausula: "2.2"
+    o_que_seria_errado: Apontar a cobrança de peças mediante orçamento aprovado como problema.
+    por_que: A aprovação prévia protege a contratante; é o arranjo usual.
+
+  - id: prazo-e-prorrogacao
+    clausula: "3.1"
+    o_que_seria_errado: Apontar o prazo de 12 meses ou a prorrogação por aditivo como problema.
+    por_que: Prazo definido, sem renovação automática.
+
+  - id: rescisao-com-aviso
+    clausula: "3.2 e 3.3"
+    o_que_seria_errado: Apontar a rescisão com 30 dias de aviso, ou a rescisão por descumprimento após 10 dias para sanar, como desequilibrada.
+    por_que: As duas valem para as duas partes.
+
+  - id: limitacao-de-responsabilidade
+    clausula: "5.2"
+    o_que_seria_errado: Apontar a limitação de responsabilidade a 12 mensalidades como abusiva.
+    por_que: É recíproca, tem valor razoável e ressalva dolo e culpa grave.
+
+  - id: sigilo-de-dois-anos
+    clausula: "6.1"
+    o_que_seria_errado: Apontar o prazo de sigilo de 2 anos como insuficiente.
+    por_que: É usual para um serviço sem acesso a informação sensível.
+
+  - id: exigencias-completas-de-lgpd
+    clausula: "6.2"
+    o_que_seria_errado: Exigir cláusula completa de LGPD (base legal, direitos do titular, transferência internacional, segurança) num contrato em que só circulam dados de contato dos empregados das partes.
+    por_que: O contrato já exclui o acesso a dados de pacientes e limita o uso dos contatos à execução; exigir mais é desproporcional ao tratamento.
+
+  - id: foro-local
+    clausula: "7.1"
+    o_que_seria_errado: Apontar o foro eleito como problema.
+    por_que: É o foro do local da prestação e da sede das duas partes.

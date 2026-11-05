@@ -71,3 +71,6 @@ Thumbs.db
 
 # ---------- Lixo ----------
 nul
+
+# ---------- Avaliação do prompt (saída de app/scripts/eval_prompt.py) ----------
+compliance-backend/tests/eval/resultados/

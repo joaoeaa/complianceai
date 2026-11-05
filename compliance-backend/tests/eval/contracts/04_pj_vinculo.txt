@@ -1,0 +1,39 @@
+CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE DESENVOLVIMENTO DE SOFTWARE
+
+Pelo presente instrumento, de um lado CODEFORTE TECNOLOGIA LTDA., inscrita no CNPJ sob o nº 66.666.666/0001-66, com sede na Rua do Bom Jesus, nº 150, Recife/PE, doravante denominada CONTRATANTE, e de outro lado M. EXEMPLO DESENVOLVIMENTO DE SISTEMAS LTDA., inscrita no CNPJ sob o nº 77.777.777/0001-77, sociedade unipessoal representada por seu único sócio, Marcos Exemplo, doravante denominada CONTRATADA, têm entre si justo e contratado o seguinte:
+
+CLÁUSULA 1ª – DO OBJETO
+1.1. A CONTRATADA prestará serviços de desenvolvimento de software à CONTRATANTE, atuando na equipe de produtos digitais.
+
+CLÁUSULA 2ª – DA EXECUÇÃO DOS SERVIÇOS
+2.1. Os serviços serão prestados pessoalmente pelo sócio da CONTRATADA, Marcos Exemplo, sendo vedada a sua substituição por qualquer outro profissional.
+2.2. A CONTRATADA cumprirá expediente de segunda a sexta-feira, das 9h às 18h, com uma hora de intervalo, registrando entrada e saída no sistema de ponto da CONTRATANTE.
+2.3. A CONTRATADA reportar-se-á ao gerente de produtos da CONTRATANTE, cujas orientações deverá seguir, e estará sujeita a advertência por escrito em caso de atraso ou descumprimento de metas.
+2.4. Durante a vigência, a CONTRATADA prestará serviços com exclusividade, sendo-lhe vedado atender outros clientes.
+
+CLÁUSULA 3ª – DA REMUNERAÇÃO
+3.1. A CONTRATANTE pagará à CONTRATADA o valor mensal fixo de R$ 12.000,00 (doze mil reais), mediante emissão de nota fiscal até o dia 5 de cada mês.
+3.2. A CONTRATADA fará jus, a cada 12 (doze) meses, a 30 (trinta) dias de descanso remunerado e, em dezembro, a uma parcela adicional equivalente a um valor mensal.
+3.3. O valor mensal será reajustado anualmente pela variação do IPCA.
+3.4. A CONTRATADA é responsável pelo recolhimento dos tributos incidentes sobre seu faturamento.
+
+CLÁUSULA 4ª – DA NATUREZA DA RELAÇÃO
+4.1. A CONTRATADA declara que a relação entre as partes é exclusivamente civil e renuncia expressamente a qualquer pretensão de reconhecimento de vínculo empregatício ou de direitos trabalhistas.
+
+CLÁUSULA 5ª – DA CONFIDENCIALIDADE
+5.1. A CONTRATADA manterá sigilo sobre o código-fonte, os dados e as informações comerciais da CONTRATANTE, durante a vigência e por 3 (três) anos após o término.
+
+CLÁUSULA 6ª – DO PRAZO E DA RESCISÃO
+6.1. Este contrato vigorará por prazo indeterminado.
+6.2. A CONTRATANTE poderá rescindir o contrato a qualquer tempo, sem aviso prévio e sem ônus.
+6.3. A CONTRATADA somente poderá rescindir o contrato mediante aviso prévio de 90 (noventa) dias, sob pena de multa equivalente a 6 (seis) valores mensais.
+
+CLÁUSULA 7ª – DO FORO
+7.1. Fica eleito o foro da Comarca de Recife/PE.
+
+Recife/PE, 3 de novembro de 2026.
+
+_________________________________
+CODEFORTE TECNOLOGIA LTDA.
+_________________________________
+M. EXEMPLO DESENVOLVIMENTO DE SISTEMAS LTDA.

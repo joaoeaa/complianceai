@@ -1,0 +1,67 @@
+# =====================================================================
+#  GABARITO NÃO REVISADO POR PROFISSIONAL
+#  Escrito para medir o prompt de análise, sem revisão de advogado.
+#  Antes de tratar o resultado como medida de qualidade jurídica, peça
+#  a alguém da área que confira cada item, a gravidade e a base legal.
+# =====================================================================
+revisado_por_profissional: false
+
+contrato: 04_pj_vinculo.txt
+tipo: Prestação de serviços por pessoa jurídica unipessoal ("PJ"), com os elementos de uma relação de emprego
+observacoes: >
+  O risco central é o reconhecimento de vínculo empregatício: pessoalidade,
+  subordinação, habitualidade, onerosidade e exclusividade estão todas escritas
+  no contrato. A forma de pessoa jurídica não afasta o vínculo quando a
+  realidade é de emprego.
+
+problemas_esperados:
+  - id: subordinacao-e-controle-de-jornada
+    clausula: "2.2 e 2.3"
+    problema: Expediente fixo com ponto, ordens de um gerente e advertências por atraso ou meta; é subordinação típica de empregado.
+    gravidade: alta
+    base_legal: ["Art. 3º, CLT", "Art. 2º, CLT"]
+
+  - id: pessoalidade
+    clausula: "2.1"
+    problema: Serviço prestado só pelo sócio, sem possibilidade de substituição; é a pessoalidade do vínculo de emprego.
+    gravidade: alta
+    base_legal: ["Art. 3º, CLT", "Art. 2º, CLT"]
+
+  - id: exclusividade-e-beneficios-de-empregado
+    clausula: "2.4 e 3.2"
+    problema: Exclusividade e "descanso remunerado" de 30 dias e parcela extra em dezembro, que são férias e 13º salário com outro nome.
+    gravidade: média
+    base_legal: ["Art. 3º, CLT", "Art. 9º, CLT"]
+
+  - id: renuncia-a-vinculo
+    clausula: "4.1"
+    problema: Renúncia antecipada ao reconhecimento de vínculo e a direitos trabalhistas; é nula e não protege a contratante.
+    gravidade: alta
+    base_legal: ["Art. 9º, CLT"]
+
+  - id: rescisao-assimetrica
+    clausula: "6.2 e 6.3"
+    problema: A contratante sai a qualquer tempo, sem aviso e sem ônus; a contratada precisa de 90 dias de aviso ou paga 6 meses de multa.
+    gravidade: média
+    base_legal: ["Art. 413, Código Civil", "Art. 421, Código Civil", "Art. 473, Código Civil"]
+
+nao_devem_aparecer:
+  - id: nota-fiscal-e-tributos
+    clausula: "3.1 e 3.4"
+    o_que_seria_errado: Apontar como problema a emissão de nota fiscal ou a responsabilidade da contratada pelos próprios tributos.
+    por_que: Em si, são cláusulas normais de prestação de serviço por empresa. O problema do contrato é a realidade de emprego, não a forma de pagamento.
+
+  - id: reajuste-anual-pelo-ipca
+    clausula: "3.3"
+    o_que_seria_errado: Apontar o reajuste anual pelo IPCA como problema.
+    por_que: Periodicidade anual e índice oficial são o usual.
+
+  - id: sigilo-de-tres-anos
+    clausula: "5.1"
+    o_que_seria_errado: Apontar o sigilo sobre código-fonte e informações por 3 anos após o término como abusivo.
+    por_que: É proporcional ao acesso a código-fonte e informação comercial.
+
+  - id: foro-de-recife
+    clausula: "7.1"
+    o_que_seria_errado: Apontar o foro eleito como problema.
+    por_que: É o foro da sede da contratante.
