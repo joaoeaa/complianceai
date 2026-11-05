@@ -13,6 +13,12 @@ Uso:
     python -m app.scripts.ingest_planalto --lei lgpd
     python -m app.scripts.ingest_planalto --todas
     python -m app.scripts.ingest_planalto --todas --dry-run
+    python -m app.scripts.ingest_planalto --lei licitacoes --reprocessar --dry-run
+    python -m app.scripts.ingest_planalto --lei licitacoes --reprocessar
+
+--reprocessar refaz os chunks de uma lei já ingerida a partir do texto gravado
+no banco, sem baixar do Planalto: normaliza, fatia, gera os embeddings e troca
+os chunks antigos pelos novos numa transação só.
 """
 from __future__ import annotations
 
@@ -28,7 +34,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 # Mora no rag_service porque o RAG também a usa, no limite de trechos por lei.
-from app.services.rag_service import chave_da_lei
+from app.services.rag_service import chave_da_lei, normalizar_referencias
 
 # O Planalto fecha a conexão sem User-Agent de navegador.
 _HEADERS = {
@@ -103,12 +109,31 @@ def extrair_texto(conteudo: bytes) -> str:
     texto = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", bruto)
     texto = re.sub(r"(?is)<(strike|del)\b[^>]*>.*?</\1>", " ", texto)
     texto = re.sub(r"(?is)<s\b[^>]*>.*?</s>", " ", texto)
+    # No HTML, a quebra de linha do código-fonte é espaço; quem quebra linha são
+    # as tags abaixo. Sem isto, o editor do Planalto, que quebra no meio da frase,
+    # deixava "Art. \r\n 92" e "III \r\n - locação" no texto e nas referências.
+    texto = re.sub(r"\s+", " ", texto)
     texto = re.sub(r"(?i)<(br|/p|/div|/tr|/h[1-6])[^>]*>", "\n", texto)
     texto = re.sub(r"<[^>]+>", " ", texto)
     texto = htmllib.unescape(texto).replace("\xa0", " ")
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n\s*\n+", "\n\n", texto)
-    return texto.strip()
+    return normalizar_referencias(texto.strip())
+
+
+def normalizar_texto_gravado(texto: str) -> str:
+    """Corrige um texto já extraído pela versão anterior de `extrair_texto`.
+
+    Ali as quebras estruturais, vindas das tags, são "\\n", e as do código-fonte
+    sobreviveram como "\\r\\n" no meio da frase: estas viram espaço. Lei cujo HTML
+    usa só "\\n" não tem como ser separada assim, e fica com a normalização das
+    referências, que vale para qualquer texto.
+    """
+    texto = re.sub(r"\r(?=\n[ \t]*\n)", "", texto)   # CR colado numa quebra estrutural
+    texto = re.sub(r"[ \t]*\r\n[ \t]*", " ", texto)
+    texto = texto.replace("\r", " ")
+    texto = re.sub(r"[ \t]{2,}", " ", texto)
+    return normalizar_referencias(texto)
 
 
 def baixar_texto(lei: Lei, timeout: float = 120.0) -> str:
@@ -125,10 +150,84 @@ def contar_artigos(texto: str) -> int:
     return len({m.replace(".", "") for m in re.findall(r"Art\.\s*([\d.]+\d)", texto)})
 
 
+def _documentos_da_lei(lei: Lei, db: Session) -> list:
+    from app.models import LegalDocument
+
+    alvo = chave_da_lei(lei.fonte)
+    return [
+        doc for doc in db.execute(select(LegalDocument)).scalars().all()
+        if chave_da_lei(doc.source) == alvo
+    ]
+
+
+def _referencias_quebradas(refs) -> int:
+    return sum(1 for r in refs if r and re.search(r"[\r\n]|\s{2,}", r))
+
+
+def reprocessar(lei: Lei, db: Session, gravar: bool = True) -> dict:
+    """Refaz os chunks de uma lei já ingerida, a partir do texto gravado.
+
+    Não baixa nada: vale para corrigir o fatiamento sem depender do Planalto no
+    ar. Os embeddings são gerados antes de qualquer remoção, e a troca dos chunks
+    vai numa transação só: se algo falhar no meio, a lei fica como estava.
+
+    Com `gravar=False`, só calcula o que mudaria, sem gerar embeddings.
+    """
+    from app.models import LegalChunk
+    from app.services.embedding_service import generate_embeddings_batch
+    from app.services.rag_service import chunk_text
+
+    documentos = _documentos_da_lei(lei, db)
+    if len(documentos) != 1:
+        raise ValueError(
+            f"{lei.fonte}: {len(documentos)} documentos na base; reprocessar exige "
+            "exatamente um. Use a ingestão normal, que substitui todos."
+        )
+    documento = documentos[0]
+    antigos = db.execute(
+        select(LegalChunk.article_ref).where(LegalChunk.document_id == documento.id)
+    ).scalars().all()
+
+    texto = normalizar_texto_gravado(documento.full_text or "")
+    novos = chunk_text(texto)
+    resumo = {
+        "chunks_antes": len(antigos),
+        "chunks_depois": len(novos),
+        "refs_quebradas_antes": _referencias_quebradas(antigos),
+        "refs_quebradas_depois": _referencias_quebradas(c["article_ref"] for c in novos),
+        "artigos_antes": len({r for r in antigos if r}),
+        "artigos_depois": len({c["article_ref"] for c in novos if c["article_ref"]}),
+    }
+    if not gravar:
+        return resumo
+
+    embeddings = generate_embeddings_batch([c["content"] for c in novos])
+    db.execute(LegalChunk.__table__.delete().where(LegalChunk.document_id == documento.id))
+    for dados, embedding in zip(novos, embeddings):
+        db.add(LegalChunk(
+            document_id=documento.id,
+            chunk_index=dados["chunk_index"],
+            content=dados["content"],
+            article_ref=dados["article_ref"],
+            embedding=embedding,
+            metadata_={
+                "source": documento.source,
+                "category": documento.category,
+                "char_count": len(dados["content"]),
+            },
+        ))
+    documento.full_text = texto
+    db.commit()
+    return resumo
+
+
 def ingerir(lei: Lei, db: Session, substituir: bool = True) -> int:
     """Ingere uma lei e devolve quantos chunks foram criados."""
     from app.models import LegalChunk, LegalDocument
     from app.services.rag_service import ingest_legal_document_sync
+
+    # Baixa antes de apagar: com o Planalto fora do ar, a lei antiga fica.
+    texto = baixar_texto(lei)
 
     if substituir:
         # Reingerir sem limpar duplicaria os artigos na busca. A comparação é pelo
@@ -147,7 +246,6 @@ def ingerir(lei: Lei, db: Session, substituir: bool = True) -> int:
             db.delete(antigo)
         db.commit()
 
-    texto = baixar_texto(lei)
     documento = ingest_legal_document_sync(
         title=lei.titulo,
         full_text=texto,
@@ -161,7 +259,7 @@ def ingerir(lei: Lei, db: Session, substituir: bool = True) -> int:
     return len(total)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Ingere legislação do Planalto.")
     parser.add_argument("--lei", help="slug de uma lei do catálogo")
     parser.add_argument("--todas", action="store_true", help="ingere o catálogo inteiro")
@@ -170,7 +268,11 @@ def main() -> None:
         "--dry-run", action="store_true",
         help="baixa e conta os artigos, sem gravar nem gastar embeddings",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--reprocessar", action="store_true",
+        help="refaz os chunks a partir do texto já gravado no banco, sem baixar",
+    )
+    args = parser.parse_args(argv)
 
     if args.listar:
         print(f"{'slug':24s} {'fonte':26s} categoria")
@@ -188,6 +290,10 @@ def main() -> None:
     else:
         parser.print_help()
         sys.exit(1)
+
+    if args.reprocessar:
+        _main_reprocessar(alvos, gravar=not args.dry_run)
+        return
 
     if args.dry_run:
         total = 0
@@ -214,6 +320,29 @@ def main() -> None:
                 print(f"OK    {lei.slug:24s} {chunks:5d} chunks")
             except Exception as exc:
                 print(f"FALHA {lei.slug:24s} {type(exc).__name__}: {str(exc)[:80]}")
+    finally:
+        engine.dispose()
+
+
+def _main_reprocessar(alvos: list, gravar: bool) -> None:
+    from app.core.config import get_settings
+
+    engine = create_engine(get_settings().DATABASE_URL_SYNC)
+    try:
+        alvo = f"{engine.url.host or 'local'}/{engine.url.database or ''}"
+        print(f"Banco: {alvo}" + ("" if gravar else "  [dry-run: nada será gravado]"))
+        for lei in alvos:
+            try:
+                with Session(engine) as db:
+                    r = reprocessar(lei, db, gravar=gravar)
+                print(
+                    f"{'OK   ' if gravar else 'SERIA'} {lei.slug:24s} "
+                    f"chunks {r['chunks_antes']} -> {r['chunks_depois']}, "
+                    f"artigos {r['artigos_antes']} -> {r['artigos_depois']}, "
+                    f"refs quebradas {r['refs_quebradas_antes']} -> {r['refs_quebradas_depois']}"
+                )
+            except Exception as exc:
+                print(f"FALHA {lei.slug:24s} {type(exc).__name__}: {str(exc)[:100]}")
     finally:
         engine.dispose()
 

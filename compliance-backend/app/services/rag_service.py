@@ -68,11 +68,42 @@ ARTICLE_START_PATTERN = re.compile(
 )
 
 
+# Referência partida por uma quebra de linha: "Art. \r\n 92", "§ \n 2º",
+# "Parágrafo \n único", "III \r\n - locação", "a \n )", "1 \n º". O texto do
+# Planalto vinha assim porque o HTML quebra linha no meio do código-fonte, e o
+# chunking gravava "Art. \r\n92" como article_ref: a verificação procurava
+# "Art. 92" e não achava.
+_QUEBRA = r"[ \t]*\r?\n\s*"
+_REFERENCIAS_QUEBRADAS = [
+    (re.compile(rf"\b(Art\.){_QUEBRA}(?=\d)", re.IGNORECASE), r"\1 "),
+    (re.compile(rf"(§){_QUEBRA}(?=\d)"), r"\1 "),
+    (re.compile(rf"\b(Par[áa]grafo){_QUEBRA}(?=[úu]nico)", re.IGNORECASE), r"\1 "),
+    # Inciso: romano sozinho no começo da linha, com o travessão na linha seguinte.
+    (re.compile(rf"^([ \t]*[IVXLCDM]+){_QUEBRA}(?=[-–—])", re.MULTILINE), r"\1 "),
+    # Alínea: letra sozinha no começo da linha, com o parêntese na seguinte.
+    (re.compile(rf"^([ \t]*[a-z]){_QUEBRA}(?=\))", re.MULTILINE), r"\1"),
+    # Ordinal: "1" numa linha e "º" na outra.
+    (re.compile(rf"(\d){_QUEBRA}(?=[º°ª])"), r"\1"),
+]
+
+
+def normalizar_referencias(texto: str) -> str:
+    """Junta artigos, parágrafos, incisos e alíneas partidos por quebra de linha.
+
+    Só mexe dentro da referência; o resto das quebras, que separam artigos e
+    incisos, fica como está. Roda em toda ingestão, de qualquer origem.
+    """
+    for padrao, troca in _REFERENCIAS_QUEBRADAS:
+        texto = padrao.sub(troca, texto)
+    return texto
+
+
 def _extract_article_ref(text: str) -> Optional[str]:
     """Extract the first article reference from a text chunk."""
     match = ARTICLE_PATTERN.search(text)
     if match:
-        return (match.group(1) or match.group(2) or match.group(3)).strip()
+        # O \s* do padrão aceita quebra de linha; a referência gravada não deve tê-la.
+        return " ".join((match.group(1) or match.group(2) or match.group(3)).split())
     return None
 
 
@@ -206,6 +237,7 @@ def ingest_legal_document_sync(
     """
     from app.models import LegalDocument, LegalChunk
 
+    full_text = normalizar_referencias(full_text)
     legal_doc = LegalDocument(
         title=title,
         source=source,
@@ -266,6 +298,7 @@ async def ingest_legal_document_async(
     """
     from app.models import LegalDocument, LegalChunk
 
+    full_text = normalizar_referencias(full_text)
     legal_doc = LegalDocument(
         title=title,
         source=source,
