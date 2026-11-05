@@ -168,10 +168,48 @@ A verificação não descarta alerta nenhum, apenas rotula. Um trecho não local
 **Origem do alerta** (prompt v4): o modelo aponta as regras reprovadas e também os problemas relevantes fora do checklist, até 10 por análise. Cada alerta sai com `origin`: `rule` para regra do checklist, `finding` para achado livre. A origem é conferida em código contra os nomes das regras enviadas, porque o checklist conta como reprovada a regra que tem alerta com o nome dela: um nome de regra com caixa ou espaço diferente volta ao nome configurado, e um `rule` sem regra correspondente vira `finding`. A tela e o PDF mostram a origem em selo; análises anteriores ao v4 não têm o campo e ficam sem selo.
 
 Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar. O formato de
-resposta esperado está documentado lá, e `PROMPT_VERSION` precisa ser incrementado
-junto: o valor fica gravado em `analyses.prompt_version` e é o que permite comparar
-análises antes e depois. O histórico das redações está em comentário ao lado da
-constante.
+resposta esperado está documentado lá. Uma redação nova entra como versão nova em
+`PROMPT_VERSIONS`, sem alterar o texto das anteriores: a versão usada fica gravada
+em `analyses.prompt_version` e é o que permite comparar análises antes e depois. O
+histórico das redações está em comentário ao lado da constante.
+
+**Versões disponíveis**: `ANALYSIS_PROMPT_VERSION` escolhe a redação (padrão `4`).
+O v4 lista exemplos de problema relevante. O v5 troca a lista por um método de
+revisão (cada cláusula por equilíbrio, valores e encargos, responsabilidade,
+dados, saída do contrato e ausências; cada trecho de lei como item de
+verificação; revisão final das cláusulas sem alerta). Valor fora da lista é erro
+de boot.
+
+### Avaliação do prompt
+
+`tests/eval/contracts/` tem cinco contratos fictícios com gabarito em YAML:
+problemas esperados, com gravidade e base legal, e o que **não** deve aparecer,
+com o porquê. Os gabaritos não foram revisados por profissional e dizem isso no
+topo; são legíveis para que alguém da área jurídica os revise.
+
+```bash
+python -m app.scripts.eval_prompt --estimar                                  # só o custo
+python -m app.scripts.eval_prompt --versoes 4,5 --rodadas 3 --max-tokens 16384
+python -m app.scripts.eval_prompt --comparar tests/eval/resultados/<arquivo>.json
+```
+
+O script roda a análise de verdade, sem gravar no banco (o RAG lê a base numa
+transação `READ ONLY`), com e sem as regras ativas do seed. Um segundo modelo, o
+juiz, decide a que item do gabarito cada alerta corresponde e registra a
+justificativa. Saem cobertura, cobertura dos graves, falsos positivos, alertas
+fora do gabarito (listados para revisão manual), citações confirmadas, artigo
+esperado, tempo, tokens de saída e quantas respostas chegaram perto do teto ou o
+passaram, por contrato e na média das rodadas, com o desvio entre elas. Antes de
+rodar, mostra o custo estimado e pede confirmação; a execução completa (v4 e v5,
+com e sem regras, 3 rodadas) fica em torno de US$ 9. Não faz parte da suíte:
+`tests/test_eval_prompt.py` testa só a lógica do script e a validade dos
+gabaritos, sem API. O resultado completo vai para `tests/eval/resultados/`,
+fora do Git.
+
+Com regras, um alerta que só a regra pede (por exemplo, ausência de cláusula
+anticorrupção) cai em "fora do gabarito", e não em falso positivo: o gabarito
+descreve problemas jurídicos, e quem decide o que a regra exige é quem a
+configurou.
 
 ---
 
