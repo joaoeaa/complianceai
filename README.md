@@ -280,7 +280,7 @@ um arquivo reinicia o processo e interrompe a análise em andamento.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Chave da API Anthropic | **obrigatório** |
 | `ANTHROPIC_MODEL` | Modelo usado na análise | `claude-sonnet-5` |
-| `ANTHROPIC_MAX_TOKENS` | Teto da resposta do modelo | `16384` |
+| `ANTHROPIC_MAX_TOKENS` | Teto da resposta do modelo. Com as 14 regras do seed, a resposta do contrato de teste chegou a ~10,7 mil tokens; abaixo do padrão, a análise com regras pode estourar o teto | `16384` |
 | `OPENAI_API_KEY` | Chave da API OpenAI (embeddings) | **obrigatório** |
 | `OPENAI_EMBEDDING_MODEL` | Modelo de embedding | `text-embedding-3-small` |
 | `DATABASE_URL` | Conexão PostgreSQL (async) | `localhost:5432` |
@@ -415,7 +415,7 @@ docker compose exec api pytest
 cd compliance-backend && pytest
 ```
 
-São **467 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
+São **484 testes**, rodando contra um SQLite local (`aiosqlite`, arquivo `test.db`, ignorado pelo Git), com as foreign keys ativadas para que `CASCADE` e `SET NULL` valham também no teste.
 
 Cobrem autenticação, documentos, regras e seu escopo, organizações, templates, workflows, webhooks, dashboard, extração de documentos, o analisador de IA, a geração de relatórios e, com atenção especial, os limites que sustentam a confiança na ferramenta: o sigilo por cliente, o isolamento do feedback entre contas e a recusa do expurgo fora do prazo.
 

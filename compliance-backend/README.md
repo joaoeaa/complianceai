@@ -165,6 +165,8 @@ O upload grava o documento, commita e agenda a análise num `ThreadPoolExecutor`
 
 A verificação não descarta alerta nenhum, apenas rotula. Um trecho não localizado pode ser paráfrase correta, e um artigo fora do top-k recuperado pode estar certo assim mesmo. O objetivo é dizer ao revisor onde confiar e onde ir conferir na fonte.
 
+**Origem do alerta** (prompt v4): o modelo aponta as regras reprovadas e também os problemas relevantes fora do checklist, até 10 por análise. Cada alerta sai com `origin`: `rule` para regra do checklist, `finding` para achado livre. A origem é conferida em código contra os nomes das regras enviadas, porque o checklist conta como reprovada a regra que tem alerta com o nome dela: um nome de regra com caixa ou espaço diferente volta ao nome configurado, e um `rule` sem regra correspondente vira `finding`. A tela e o PDF mostram a origem em selo; análises anteriores ao v4 não têm o campo e ficam sem selo.
+
 Ao mexer no prompt, `services/ai_analyzer.py` é o único ponto a tocar. O formato de
 resposta esperado está documentado lá, e `PROMPT_VERSION` precisa ser incrementado
 junto: o valor fica gravado em `analyses.prompt_version` e é o que permite comparar
