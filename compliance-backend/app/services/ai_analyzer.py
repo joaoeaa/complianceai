@@ -36,6 +36,9 @@ class AnalysisResult:
     # espera, e sem gravar nao da para comparar uma mudanca de prompt ou de
     # modelo depois que o log rotaciona.
     duration_ms: int = 0
+    # Versão do prompt que produziu esta análise (ANALYSIS_PROMPT_VERSION, ou a
+    # pedida explicitamente). É a que vai para analyses.prompt_version.
+    prompt_version: Optional[str] = None
 
 
 # ─── Prompt Template ───
@@ -56,7 +59,18 @@ class AnalysisResult:
 #      dispositivo na base. Com regras ativas, o modelo passava a apontar só as
 #      regras reprovadas, e juros abusivos ou retenção indefinida de dados
 #      sumiam do relatório
-PROMPT_VERSION = "4"
+#   5  troca a lista de exemplos de "problema relevante" por um método de
+#      revisão: cada cláusula passa por seis dimensões (equilíbrio, valores e
+#      encargos, responsabilidade, dados, saída do contrato, ausências), cada
+#      trecho de lei recebido vira item de verificação e há uma revisão final
+#      das cláusulas sem alerta. Pede para não apontar cláusula usual e
+#      equilibrada e para aprofundar os alertas graves. Origem, teto de achados,
+#      proibição de citação inventada e formato de saída são os do v4
+#
+# A versão usada vem de ANALYSIS_PROMPT_VERSION. Cada uma continua disponível
+# para que a troca seja medida (app/scripts/eval_prompt.py) antes de virar padrão.
+PROMPT_VERSIONS = ("4", "5")
+PROMPT_VERSION_PADRAO = "4"
 
 # Teto de achados livres por análise. Sem ele, um contrato ruim podia gerar
 # dezenas de apontamentos menores e estourar ANTHROPIC_MAX_TOKENS.
@@ -87,6 +101,30 @@ IMPORTANTE:
 - Responda EXCLUSIVAMENTE em JSON válido, sem markdown, sem texto antes ou depois.
 """
 
+_LINHA_3_V4 = "3. Identificar também os riscos e problemas relevantes que nenhuma regra cobre\n"
+assert SYSTEM_PROMPT.count(_LINHA_3_V4) == 1
+SYSTEM_PROMPT_V5 = SYSTEM_PROMPT.replace(
+    _LINHA_3_V4,
+    "3. Revisar cada cláusula pelo MÉTODO DE REVISÃO da mensagem, para encontrar "
+    "também os problemas que nenhuma regra cobre\n",
+)
+
+_SYSTEM_PROMPTS = {"4": SYSTEM_PROMPT, "5": SYSTEM_PROMPT_V5}
+
+
+def versao_do_prompt(pedida: Optional[str] = None) -> str:
+    """A versão pedida ou, sem pedido, a de ANALYSIS_PROMPT_VERSION.
+
+    Versão desconhecida é erro, e não queda silenciosa para o padrão: a análise
+    gravaria um prompt_version que não corresponde ao texto enviado.
+    """
+    versao = pedida if pedida is not None else settings.ANALYSIS_PROMPT_VERSION
+    if versao not in PROMPT_VERSIONS:
+        raise ValueError(
+            f"Versão de prompt desconhecida: {versao!r}. Disponíveis: {', '.join(PROMPT_VERSIONS)}"
+        )
+    return versao
+
 
 def _build_rules_section(rules: List[Dict[str, Any]]) -> str:
     """Build the rules section of the prompt from active rules."""
@@ -100,7 +138,9 @@ def _build_rules_section(rules: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _build_legal_context_section(legal_context: List[Dict[str, str]]) -> str:
+def _build_legal_context_section(
+    legal_context: List[Dict[str, str]], versao: str = PROMPT_VERSION_PADRAO
+) -> str:
     """Build the legal context section from RAG-retrieved legislation chunks."""
     if not legal_context:
         return ""
@@ -113,11 +153,19 @@ def _build_legal_context_section(legal_context: List[Dict[str, str]]) -> str:
         ref = f" — {article}" if article else ""
         lines.append(f"\n[{i}] {source}{ref}:")
         lines.append(content)
-    lines.append(
-        "\nUse a base legal acima para fundamentar os alertas, os de regra e os "
-        "achados livres. Para cada alerta, procure aqui o dispositivo que trata do "
-        "problema e cite-o em 'legal_basis'.\n"
-    )
+    if versao == "4":
+        lines.append(
+            "\nUse a base legal acima para fundamentar os alertas, os de regra e os "
+            "achados livres. Para cada alerta, procure aqui o dispositivo que trata do "
+            "problema e cite-o em 'legal_basis'.\n"
+        )
+    else:
+        lines.append(
+            "\nCada dispositivo acima é um item de verificação: pergunte se o contrato "
+            "o respeita. Se não respeita, há alerta, e esse dispositivo vai em "
+            "'legal_basis'. Use a base legal acima também para fundamentar os demais "
+            "alertas, os de regra e os achados livres.\n"
+        )
     return "\n".join(lines)
 
 
@@ -166,15 +214,91 @@ def _build_feedback_section(feedback_learnings: Optional[List[Dict[str, Any]]] =
     return "\n".join(lines)
 
 
+# ─── Trechos que mudam entre as versões ───
+# O v4 fica aqui exatamente como foi usado: o texto gravado com prompt_version 4
+# tem que continuar reproduzível.
+
+_QUAIS_ALERTAS = {
+    "4": '''QUAIS ALERTAS GERAR:
+
+1. Regras reprovadas: um alerta para cada problema que viole uma regra listada,
+   com "origin": "rule" e "rule_name" igual ao nome da regra, sem alterar nada.
+2. Achados livres: os demais problemas relevantes do documento que nenhuma regra
+   cobre, com "origin": "finding" e um título curto em "rule_name". Relevante é o
+   que traz risco jurídico ou financeiro concreto para alguma das partes, como
+   cláusula nula ou abusiva, multa ou juros acima do limite legal, obrigação sem
+   prazo ou desequilíbrio entre as partes. Não aponte estilo ou redação.
+   Até {MAX_ACHADOS_LIVRES} achados livres, os mais graves primeiro. Não repita como
+   achado livre um problema que já tenha alerta de regra.
+3. Sem regras configuradas, todos os alertas são achados livres.
+''',
+    "5": '''MÉTODO DE REVISÃO (faça antes de escrever a resposta; o roteiro não vai no JSON):
+
+1. Cláusula por cláusula, passe cada uma por estas dimensões:
+   a) Equilíbrio entre as partes: direitos, poderes e ônus de um lado têm
+      contrapartida do outro?
+   b) Valores e encargos: multas, juros, prazos, percentuais e reajustes estão
+      dentro do limite legal ou, onde a lei não fixa limite, do razoável para o
+      tipo de contrato?
+   c) Responsabilidade: exclusões, limitações e renúncias são válidas e
+      proporcionais?
+   d) Dados e informações: finalidade, compartilhamento, retenção e segurança
+      estão definidos e são compatíveis com a lei?
+   e) Saída do contrato: rescisão, seus custos e o que sobrevive ao fim são
+      claros e equilibrados?
+2. Ausências: o que um contrato deste tipo normalmente precisa ter e este não tem?
+3. Base legal como checklist: para cada dispositivo de BASE LEGAL RELEVANTE,
+   pergunte "o contrato respeita isto?". Se não respeita, há alerta, e esse
+   dispositivo é a base legal dele.
+4. Regras: confira cada regra listada.
+5. Revisão final: liste para si as cláusulas que não geraram alerta e confirme,
+   uma a uma, pelas dimensões do passo 1, que não há problema nelas. Se houver,
+   acrescente o alerta.
+
+QUAIS ALERTAS GERAR:
+
+1. Regras reprovadas: um alerta para cada problema que viole uma regra listada,
+   com "origin": "rule" e "rule_name" igual ao nome da regra, sem alterar nada.
+2. Achados livres: os demais problemas relevantes encontrados pelo método, com
+   "origin": "finding" e um título curto em "rule_name". Relevante é o que traz
+   risco jurídico ou financeiro concreto para alguma das partes.
+   Até {MAX_ACHADOS_LIVRES} achados livres, os mais graves primeiro. Não repita como
+   achado livre um problema que já tenha alerta de regra.
+3. Sem regras configuradas, todos os alertas são achados livres.
+4. Cláusula usual e equilibrada para o tipo de contrato não é problema, mesmo que
+   pudesse ser redigida de outro jeito. Não aponte estilo ou redação: um alerta
+   falso custa a confiança do revisor nos verdadeiros.
+5. Profundidade onde pesa: nos alertas de severidade alta, diga qual limite ou
+   dever foi violado e qual o efeito para a parte prejudicada; nos de severidade
+   baixa, uma frase basta.
+''',
+}
+
+_TAMANHO_ISSUE = {
+    "4": '''- "issue": 1 a 2 frases dizendo qual é o problema. Sem repetir o trecho citado,
+  que já aparece em "excerpt", e sem reproduzir o texto da lei, que o sistema
+  anexa depois a partir da base legal.
+''',
+    "5": '''- "issue": 1 a 2 frases dizendo qual é o problema; nos alertas de severidade
+  alta, até 3, com o limite ou dever violado e o efeito. Sem repetir o trecho
+  citado, que já aparece em "excerpt", e sem reproduzir o texto da lei, que o
+  sistema anexa depois a partir da base legal.
+''',
+}
+
+
 def _build_user_prompt(
     document_text: str,
     rules: List[Dict[str, Any]],
     legal_context: Optional[List[Dict[str, str]]] = None,
     feedback_learnings: Optional[List[Dict[str, Any]]] = None,
+    versao: str = PROMPT_VERSION_PADRAO,
 ) -> str:
     """Build the complete user prompt with rules, legal context, feedback learnings, and document text."""
+    if versao not in PROMPT_VERSIONS:
+        raise ValueError(f"Versão de prompt desconhecida: {versao!r}")
     rules_section = _build_rules_section(rules)
-    legal_section = _build_legal_context_section(legal_context or [])
+    legal_section = _build_legal_context_section(legal_context or [], versao)
     feedback_section = _build_feedback_section(feedback_learnings)
 
     # Truncate document if too long (Claude supports 200k tokens but we limit for cost)
@@ -184,6 +308,8 @@ def _build_user_prompt(
         logger.warning(f"Documento truncado de {len(document_text)} para {max_chars} caracteres")
 
     rule_names = [r["name"] for r in rules] if rules else []
+    quais_alertas = _QUAIS_ALERTAS[versao].format(MAX_ACHADOS_LIVRES=MAX_ACHADOS_LIVRES)
+    tamanho_issue = _TAMANHO_ISSUE[versao]
 
     return f"""{rules_section}
 {legal_section}
@@ -211,19 +337,7 @@ Responda EXCLUSIVAMENTE com o seguinte JSON (sem markdown, sem ```json, apenas o
   "missing_clauses": ["Lista de cláusulas/regras ausentes no documento"]
 }}
 
-QUAIS ALERTAS GERAR:
-
-1. Regras reprovadas: um alerta para cada problema que viole uma regra listada,
-   com "origin": "rule" e "rule_name" igual ao nome da regra, sem alterar nada.
-2. Achados livres: os demais problemas relevantes do documento que nenhuma regra
-   cobre, com "origin": "finding" e um título curto em "rule_name". Relevante é o
-   que traz risco jurídico ou financeiro concreto para alguma das partes, como
-   cláusula nula ou abusiva, multa ou juros acima do limite legal, obrigação sem
-   prazo ou desequilíbrio entre as partes. Não aponte estilo ou redação.
-   Até {MAX_ACHADOS_LIVRES} achados livres, os mais graves primeiro. Não repita como
-   achado livre um problema que já tenha alerta de regra.
-3. Sem regras configuradas, todos os alertas são achados livres.
-
+{quais_alertas}
 EXIGÊNCIAS SOBRE OS DOIS CAMPOS QUE SÃO CONFERIDOS DEPOIS:
 
 1. "excerpt" precisa ser uma cópia literal do documento, caractere por caractere,
@@ -247,10 +361,7 @@ Escreva de forma direta. O tempo de espera do usuário é proporcional ao tamanh
 do que você gera, e texto longo não torna o apontamento mais correto.
 
 - "summary": no máximo 3 frases.
-- "issue": 1 a 2 frases dizendo qual é o problema. Sem repetir o trecho citado,
-  que já aparece em "excerpt", e sem reproduzir o texto da lei, que o sistema
-  anexa depois a partir da base legal.
-- "suggestion": 1 frase com a ação concreta. "Suprimir o parágrafo único da
+{tamanho_issue}- "suggestion": 1 frase com a ação concreta. "Suprimir o parágrafo único da
   cláusula quinta" em vez de um parágrafo explicando por quê.
 - "excerpt": só o trecho necessário para identificar a cláusula. Se ela for
   longa, cite o começo, use [...] e cite o fim.
@@ -376,6 +487,7 @@ def analyze_document(
     rules: List[Dict[str, Any]],
     legal_context: Optional[List[Dict[str, str]]] = None,
     feedback_learnings: Optional[List[Dict[str, Any]]] = None,
+    prompt_version: Optional[str] = None,
 ) -> AnalysisResult:
     """
     Analyze a document using Claude AI.
@@ -385,6 +497,7 @@ def analyze_document(
         rules: List of active rules as dicts with keys: name, severity, criteria
         legal_context: Optional list of RAG-retrieved legislation chunks
         feedback_learnings: Optional aggregated user feedback for learning loop
+        prompt_version: Versão do prompt; sem ela, ANALYSIS_PROMPT_VERSION
 
     Returns:
         AnalysisResult with structured analysis data
@@ -405,20 +518,22 @@ def analyze_document(
         max_retries=0,
     )
 
+    versao = versao_do_prompt(prompt_version)
     user_prompt = _build_user_prompt(
         document_text, rules,
         legal_context=legal_context,
         feedback_learnings=feedback_learnings,
+        versao=versao,
     )
 
     inicio = time.monotonic()
-    logger.info(f"Enviando análise para Claude ({settings.ANTHROPIC_MODEL})...")
+    logger.info(f"Enviando análise para Claude ({settings.ANTHROPIC_MODEL}, prompt v{versao})...")
     logger.debug(f"Prompt: {len(user_prompt)} caracteres, {len(rules)} regras")
 
     response = client.messages.create(
         model=settings.ANTHROPIC_MODEL,
         max_tokens=settings.ANTHROPIC_MAX_TOKENS,
-        system=SYSTEM_PROMPT,
+        system=_SYSTEM_PROMPTS[versao],
         messages=[{"role": "user", "content": user_prompt}],
     )
 
@@ -452,4 +567,5 @@ def analyze_document(
         prompt_tokens=response.usage.input_tokens,
         completion_tokens=response.usage.output_tokens,
         duration_ms=int((time.monotonic() - inicio) * 1000),
+        prompt_version=versao,
     )

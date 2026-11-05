@@ -3,7 +3,7 @@ Application settings loaded from environment variables.
 Uses pydantic-settings for validation and type coercion.
 """
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 from typing import List
 from functools import lru_cache
 
@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     # Trechos de legislação que vão para o prompt de uma análise, no máximo. Cada
     # um tem até ~800 caracteres; 12 dão uns 10 mil caracteres de contexto.
     RAG_MAX_TRECHOS: int = 12
+    # Redação do prompt de análise (ai_analyzer.PROMPT_VERSIONS). Trocar só depois
+    # de medir com app/scripts/eval_prompt.py; o valor fica gravado em cada análise.
+    ANALYSIS_PROMPT_VERSION: str = "4"
+
+    @field_validator("ANALYSIS_PROMPT_VERSION")
+    @classmethod
+    def _versao_de_prompt_conhecida(cls, v: str) -> str:
+        # Duplicado de ai_analyzer.PROMPT_VERSIONS para não importar o serviço na
+        # configuração; um teste confere que as duas listas são iguais.
+        if v not in ("4", "5"):
+            raise ValueError(f"ANALYSIS_PROMPT_VERSION={v!r} não existe; use 4 ou 5")
+        return v
 
     # ─── CORS ───
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"]

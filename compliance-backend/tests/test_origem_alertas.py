@@ -16,7 +16,7 @@ from httpx import AsyncClient
 from app.schemas import AlertSchema
 from app.services.ai_analyzer import (
     MAX_ACHADOS_LIVRES,
-    PROMPT_VERSION,
+    PROMPT_VERSION_PADRAO,
     _build_legal_context_section,
     _build_user_prompt,
     _parse_llm_response,
@@ -91,7 +91,8 @@ def test_analyze_document_confere_a_origem_com_as_regras_do_prompt():
     cliente = MagicMock()
     cliente.messages.create.return_value = resposta
     s = MagicMock(ANTHROPIC_API_KEY="sk-ant-valida", ANTHROPIC_TIMEOUT=60,
-                  ANTHROPIC_MODEL="m", ANTHROPIC_MAX_TOKENS=1000)
+                  ANTHROPIC_MODEL="m", ANTHROPIC_MAX_TOKENS=1000,
+                  ANALYSIS_PROMPT_VERSION="4")
     regras = [{"name": "Foro competente", "severity": "high", "criteria": "c"}]
 
     with patch("app.services.ai_analyzer.settings", s), \
@@ -114,7 +115,7 @@ def _prompt(regras=None, contexto=None):
 
 
 def test_versao_do_prompt_e_a_4():
-    assert PROMPT_VERSION == "4"
+    assert PROMPT_VERSION_PADRAO == "4"
 
 
 def test_prompt_pede_regras_reprovadas_e_achados_livres_com_origem():

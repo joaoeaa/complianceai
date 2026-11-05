@@ -305,6 +305,7 @@ class TestAnalyzeDocument:
         mock_settings.ANTHROPIC_TIMEOUT = 120
         mock_settings.ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
         mock_settings.ANTHROPIC_MAX_TOKENS = 4096
+        mock_settings.ANALYSIS_PROMPT_VERSION = "4"
 
         with patch("app.services.ai_analyzer.settings", mock_settings), \
              patch("app.services.ai_analyzer.anthropic") as mock_anthropic_mod:
@@ -333,6 +334,7 @@ class TestAnalyzeDocument:
         mock_settings.ANTHROPIC_TIMEOUT = 120
         mock_settings.ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
         mock_settings.ANTHROPIC_MAX_TOKENS = 4096
+        mock_settings.ANALYSIS_PROMPT_VERSION = "4"
 
         legal_ctx = [
             {"source": "LGPD", "article_ref": "Art. 7º", "content": "Consentimento"},
@@ -364,6 +366,7 @@ class TestAnalyzeDocument:
         mock_settings.ANTHROPIC_TIMEOUT = 120
         mock_settings.ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
         mock_settings.ANTHROPIC_MAX_TOKENS = 4096
+        mock_settings.ANALYSIS_PROMPT_VERSION = "4"
 
         with patch("app.services.ai_analyzer.settings", mock_settings), \
              patch("app.services.ai_analyzer.anthropic") as mock_anthropic_mod:
@@ -430,6 +433,7 @@ class TestRespostaTruncada:
         settings_mock.ANTHROPIC_API_KEY = "sk-ant-valida"
         settings_mock.ANTHROPIC_MODEL = "claude-sonnet-5"
         settings_mock.ANTHROPIC_MAX_TOKENS = 16384
+        settings_mock.ANALYSIS_PROMPT_VERSION = "4"
         settings_mock.ANTHROPIC_TIMEOUT = 300
 
         with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
@@ -460,6 +464,7 @@ class TestRespostaTruncada:
         settings_mock.ANTHROPIC_API_KEY = "sk-ant-valida"
         settings_mock.ANTHROPIC_MODEL = "claude-sonnet-5"
         settings_mock.ANTHROPIC_MAX_TOKENS = 16384
+        settings_mock.ANALYSIS_PROMPT_VERSION = "4"
         settings_mock.ANTHROPIC_TIMEOUT = 300
 
         with patch("app.services.ai_analyzer.anthropic.Anthropic", return_value=cliente), \
@@ -496,7 +501,7 @@ class TestConcisao:
 
     def test_versao_do_prompt_acompanha_a_mudanca(self):
         """Sem incremento, não dá para comparar análises antes e depois."""
-        from app.services.ai_analyzer import PROMPT_VERSION
+        from app.services.ai_analyzer import PROMPT_VERSION_PADRAO as PROMPT_VERSION
 
         assert int(PROMPT_VERSION) >= 3
 
@@ -518,6 +523,7 @@ class TestRetryDaRequisicao:
         s.ANTHROPIC_API_KEY = "sk-ant-valida"
         s.ANTHROPIC_MODEL = "claude-sonnet-5"
         s.ANTHROPIC_MAX_TOKENS = 16384
+        s.ANALYSIS_PROMPT_VERSION = "4"
         s.ANTHROPIC_TIMEOUT = 300
         return s
 
