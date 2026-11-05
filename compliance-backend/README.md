@@ -177,8 +177,12 @@ histórico das redações está em comentário ao lado da constante.
 O v4 lista exemplos de problema relevante. O v5 troca a lista por um método de
 revisão (cada cláusula por equilíbrio, valores e encargos, responsabilidade,
 dados, saída do contrato e ausências; cada trecho de lei como item de
-verificação; revisão final das cláusulas sem alerta). Valor fora da lista é erro
-de boot.
+verificação; revisão final das cláusulas sem alerta). O v4.1 é o v4 com dois
+itens do v5 (não apontar cláusula usual e equilibrada; verificar ausências
+esperadas para o tipo de contrato) e uma régua para limitação de
+responsabilidade e renúncias: recíproca e proporcional é no máximo alerta leve,
+exclusão total ou por dolo e culpa grave é grave, renúncia usual do tipo de
+contrato não é problema. Valor fora da lista é erro de boot.
 
 ### Avaliação do prompt
 

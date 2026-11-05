@@ -289,7 +289,7 @@ um arquivo reinicia o processo e interrompe a análise em andamento.
 | `ORPHAN_TIMEOUT_MINUTES` | Minutos sem sinal de vida até a análise ser dada como órfã | `12` |
 | `ANALYSIS_MAX_DURATION_MINUTES` | Teto do batimento, contado do início da primeira tentativa; precisa cobrir o pior caso de uma análise (~55 min com os padrões) | `60` |
 | `RAG_MAX_TRECHOS` | Trechos de legislação no prompt de uma análise, no máximo 5 por lei | `12` |
-| `ANALYSIS_PROMPT_VERSION` | Redação do prompt de análise (`4` ou `5`); trocar só depois de medir com `app.scripts.eval_prompt` | `4` |
+| `ANALYSIS_PROMPT_VERSION` | Redação do prompt de análise (`4`, `4.1` ou `5`); trocar só depois de medir com `app.scripts.eval_prompt` | `4` |
 | `STORAGE_BACKEND` | Onde fica o arquivo original: `local` ou `s3` | `local` |
 | `UPLOAD_DIR` | Diretório do storage `local` | `./storage/uploads` |
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX` | Bucket do storage `s3` | prefixo `uploads/` |
