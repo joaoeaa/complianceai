@@ -14,7 +14,7 @@
  * re-renders do painel de comparação. Todos os efeitos respeitam
  * prefers-reduced-motion.
  *
- * Números do herói medidos no banco de produção em 12/08/2026. Para recontar:
+ * Números do herói medidos no banco de produção em 09/11/2026. Para recontar:
  *   select count(*) from (select distinct d.source, ch.article_ref
  *   from legal_chunks ch join legal_documents d on d.id=ch.document_id
  *   where ch.article_ref is not null) t
@@ -56,7 +56,7 @@ const LACUNAS = [
 
 const PASSOS = [
   ["Envie o contrato", "PDF ou DOCX, pelo navegador. Documento digitalizado passa por leitura óptica."],
-  ["O sistema busca a lei", "Busca semântica em 3.927 artigos de dez leis completas, e não na memória do modelo."],
+  ["O sistema busca a lei", "Busca semântica em 3.852 artigos de dez leis completas, e não na memória do modelo."],
   ["A IA analisa com as suas regras", "As 29 verificações padrão mais as que o seu escritório definir, por área do direito."],
   ["Cada alerta é conferido", "Trecho localizado no contrato, com a página. Artigo localizado na base. O que não confere vem marcado."],
 ];
@@ -604,7 +604,7 @@ export default function LandingPage({ onEntrar, onCriarConta }) {
             </div>
             <div className="lp-nums reveal d4">
               <div>
-                <div className="lp-num-v" data-n="3927" data-fmt="pt">0</div>
+                <div className="lp-num-v" data-n="3852" data-fmt="pt">0</div>
                 <div className="lp-num-l">artigos de lei indexados</div>
               </div>
               <div>
@@ -613,7 +613,7 @@ export default function LandingPage({ onEntrar, onCriarConta }) {
               </div>
               <div>
                 <div className="lp-num-v" data-n="29">0</div>
-                <div className="lp-num-l">verificações configuráveis</div>
+                <div className="lp-num-l">verificações padrão</div>
               </div>
             </div>
           </div>
@@ -780,7 +780,9 @@ export default function LandingPage({ onEntrar, onCriarConta }) {
           <div className="lp-eyebrow reveal">O que ele verifica</div>
           <h2 className="reveal">Vinte e nove verificações, organizadas por área do direito.</h2>
           <p className="lp-lede reveal">
-            As que valem para qualquer contrato vêm ligadas. As de área específica
+            São as que vêm de base, não um limite: qualquer uma pode ser
+            desligada, e você cria as suas. As que valem para qualquer contrato
+            vêm ligadas. As de área específica
             ficam desligadas até você precisar, porque regra de locação em
             contrato de tecnologia só produz alarme falso. Uma área inteira liga
             em um clique.
